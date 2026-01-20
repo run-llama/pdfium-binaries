@@ -1,0 +1,289 @@
+diff --git a/core/fpdfdoc/cpdf_structelement.cpp b/core/fpdfdoc/cpdf_structelement.cpp
+index e33e51efc..619887b6b 100644
+--- a/core/fpdfdoc/cpdf_structelement.cpp
++++ b/core/fpdfdoc/cpdf_structelement.cpp
+@@ -96,6 +96,12 @@ int CPDF_StructElement::GetKidContentId(size_t index) const {
+              : -1;
+ }
+ 
++int CPDF_StructElement::GetKidObjNum(size_t index) const {
++  return kids_[index].type_ == Kid::kObject
++             ? kids_[index].ref_obj_num_
++             : -1;
++}
++
+ bool CPDF_StructElement::UpdateKidIfElement(const CPDF_Dictionary* dict,
+                                             CPDF_StructElement* pElement) {
+   bool bSave = false;
+diff --git a/core/fpdfdoc/cpdf_structelement.h b/core/fpdfdoc/cpdf_structelement.h
+index f99df44b4..6dccd4d67 100644
+--- a/core/fpdfdoc/cpdf_structelement.h
++++ b/core/fpdfdoc/cpdf_structelement.h
+@@ -35,6 +35,7 @@ class CPDF_StructElement final : public Retainable {
+   size_t CountKids() const;
+   CPDF_StructElement* GetKidIfElement(size_t index) const;
+   int GetKidContentId(size_t index) const;
++  int GetKidObjNum(size_t index) const;
+   bool UpdateKidIfElement(const CPDF_Dictionary* dict,
+                           CPDF_StructElement* pElement);
+ 
+diff --git a/fpdfsdk/fpdf_annot.cpp b/fpdfsdk/fpdf_annot.cpp
+index a67614241..b8ac84457 100644
+--- a/fpdfsdk/fpdf_annot.cpp
++++ b/fpdfsdk/fpdf_annot.cpp
+@@ -1773,3 +1773,12 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
+   annot_dict->SetNewFor<CPDF_Reference>("FS", doc, fs_obj->GetObjNum());
+   return FPDFAttachmentFromCPDFObject(fs_obj);
+ }
++
++FPDF_EXPORT int FPDF_CALLCONV FPDFAnnot_GetObjNum(FPDF_ANNOTATION annot) {
++  const CPDF_Dictionary* pAnnotDict = GetAnnotDictFromFPDFAnnotation(annot);
++  if (!pAnnotDict) {
++    return -1;
++  }
++
++  return pAnnotDict->GetObjNum();
++}
+diff --git a/fpdfsdk/fpdf_edittext.cpp b/fpdfsdk/fpdf_edittext.cpp
+index 85db61bf0..ca9e29eb0 100644
+--- a/fpdfsdk/fpdf_edittext.cpp
++++ b/fpdfsdk/fpdf_edittext.cpp
+@@ -1042,6 +1042,26 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+   return true;
+ }
+ 
++FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidthFromCharCode(FPDF_FONT font,
++                                                           uint32_t char_code,
++                                                           float font_size,
++                                                           float* width) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont || !width) {
++    return false;
++  }
++
++  CPDF_CIDFont* pCIDFont = pFont->AsCIDFont();
++  if (pCIDFont && pCIDFont->IsVertWriting()) {
++    uint16_t cid = pCIDFont->CIDFromCharCode(char_code);
++    *width = pCIDFont->GetVertWidth(cid) * font_size / 1000.f;
++  } else {
++    *width = pFont->GetCharWidthF(char_code) * font_size / 1000.f;
++  }
++
++  return true;
++}
++
+ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV
+ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
+   auto* pFont = CPDFFontFromFPDFFont(font);
+@@ -1078,6 +1098,41 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
+   return FPDFGlyphPathFromCFXPath(pPath);
+ }
+ 
++FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV
++FPDFFont_GetGlyphPathFromCharCode(FPDF_FONT font, uint32_t char_code, float font_size) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont) {
++    return nullptr;
++  }
++
++  if (!pdfium::IsValueInRangeForNumericType<wchar_t>(char_code)) {
++    return nullptr;
++  }
++
++  std::vector<TextCharPos> pos =
++      GetCharPosList(pdfium::span_from_ref(char_code),
++                     pdfium::span<const float>(), pFont, font_size);
++  if (pos.empty()) {
++    return nullptr;
++  }
++
++  CFX_Font* pCfxFont;
++  if (pos[0].fallback_font_position_ == -1) {
++    pCfxFont = pFont->GetFont();
++    DCHECK(pCfxFont);  // Never null.
++  } else {
++    pCfxFont = pFont->GetFontFallback(pos[0].fallback_font_position_);
++    if (!pCfxFont) {
++      return nullptr;
++    }
++  }
++
++  const CFX_Path* pPath =
++      pCfxFont->LoadGlyphPath(pos[0].glyph_index_, pos[0].font_char_width_);
++
++  return FPDFGlyphPathFromCFXPath(pPath);
++}
++
+ FPDF_EXPORT int FPDF_CALLCONV
+ FPDFGlyphPath_CountGlyphSegments(FPDF_GLYPHPATH glyphpath) {
+   auto* pPath = CFXPathFromFPDFGlyphPath(glyphpath);
+diff --git a/fpdfsdk/fpdf_structtree.cpp b/fpdfsdk/fpdf_structtree.cpp
+index fbae924a4..6bb7deca5 100644
+--- a/fpdfsdk/fpdf_structtree.cpp
++++ b/fpdfsdk/fpdf_structtree.cpp
+@@ -324,6 +324,18 @@ FPDF_StructElement_GetChildMarkedContentID(FPDF_STRUCTELEMENT struct_element,
+   return elem->GetKidContentId(index);
+ }
+ 
++FPDF_EXPORT int FPDF_CALLCONV
++FPDF_StructElement_GetChildObjNum(FPDF_STRUCTELEMENT struct_element,
++                                  int index) {
++  CPDF_StructElement* elem =
++      CPDFStructElementFromFPDFStructElement(struct_element);
++  if (!elem || index < 0 || static_cast<size_t>(index) >= elem->CountKids()) {
++    return -1;
++  }
++
++  return elem->GetKidObjNum(index);
++}
++
+ FPDF_EXPORT FPDF_STRUCTELEMENT FPDF_CALLCONV
+ FPDF_StructElement_GetParent(FPDF_STRUCTELEMENT struct_element) {
+   CPDF_StructElement* elem =
+diff --git a/fpdfsdk/fpdf_text.cpp b/fpdfsdk/fpdf_text.cpp
+index 960b2aefc..cf18d618a 100644
+--- a/fpdfsdk/fpdf_text.cpp
++++ b/fpdfsdk/fpdf_text.cpp
+@@ -76,6 +76,21 @@ FPDFText_GetUnicode(FPDF_TEXTPAGE text_page, int index) {
+   return charinfo.unicode();
+ }
+ 
++FPDF_EXPORT unsigned int FPDF_CALLCONV
++FPDFText_GetCharCode(FPDF_TEXTPAGE text_page, int index) {
++  CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, index);
++  if (!textpage) {
++    return 0;
++  }
++
++  const CPDF_TextPage::CharInfo& charinfo = textpage->GetCharInfo(index);
++  unsigned int char_code = charinfo.char_code();
++  if (char_code == CPDF_Font::kInvalidCharCode) {
++    return 0;
++  }
++  return char_code;
++}
++
+ FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
+ FPDFText_GetTextObject(FPDF_TEXTPAGE text_page, int index) {
+   CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, index);
+diff --git a/public/fpdf_annot.h b/public/fpdf_annot.h
+index 0aa9f6886..45cec5103 100644
+--- a/public/fpdf_annot.h
++++ b/public/fpdf_annot.h
+@@ -1040,6 +1040,14 @@ FPDFAnnot_GetFileAttachment(FPDF_ANNOTATION annot);
+ FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
+ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name);
+ 
++// LlamaParse API.
++// Get the object number for |annot|.
++//
++//   annot - handle to an annotation.
++//
++// Returns the object number, or NULL on failure.
++FPDF_EXPORT int FPDF_CALLCONV FPDFAnnot_GetObjNum(FPDF_ANNOTATION annot);
++
+ #ifdef __cplusplus
+ }  // extern "C"
+ #endif  // __cplusplus
+diff --git a/public/fpdf_edit.h b/public/fpdf_edit.h
+index 0f3c4c5e9..4aabb9713 100644
+--- a/public/fpdf_edit.h
++++ b/public/fpdf_edit.h
+@@ -1622,6 +1622,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+                                                            float font_size,
+                                                            float* width);
+ 
++// LlamaParse API.
++// Behaves identically to FPDFFont_GetGlyphWidth but accepts an explicit charcode
++// for font instead of  a unicode codepoint.
++//
++// font       - the handle to the font object.
++// char_code  - char code for the glyph.
++// font_size  - the size of the font.
++// width      - pointer where the glyph width will be stored
++//
++// Glyph width is the distance from the end of the prior glyph to the next
++// glyph. This will be the vertical distance for vertical writing.
++//
++// Returns TRUE on success; |width| unmodified on failure.
++FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidthFromCharCode(FPDF_FONT font,
++                                                           uint32_t char_code,
++                                                           float font_size,
++                                                           float* width);
++
+ // Experimental API.
+ // Get the glyphpath describing how to draw a font glyph.
+ //
+@@ -1634,6 +1652,19 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
+                                                                uint32_t glyph,
+                                                                float font_size);
+ 
++// LlamaParse API.
++// Behaves identically to FDFFont_GetGlyphPath but accepts an explicit charcode
++// for font instead of a unicode codepoint.
++//
++// font       - the handle to the font object.
++// char_code  - char code for the glyph being drawn.
++// font_size  - the size of the font.
++//
++// Returns the handle to the segment, or NULL on faiure.
++FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPathFromCharCode(FPDF_FONT font,
++                                                               uint32_t char_code,
++                                                               float font_size);
++
+ // Experimental API.
+ // Get number of segments inside glyphpath.
+ //
+diff --git a/public/fpdf_structtree.h b/public/fpdf_structtree.h
+index ea67fefd2..dc947d1cc 100644
+--- a/public/fpdf_structtree.h
++++ b/public/fpdf_structtree.h
+@@ -286,6 +286,24 @@ FPDF_EXPORT int FPDF_CALLCONV
+ FPDF_StructElement_GetChildMarkedContentID(FPDF_STRUCTELEMENT struct_element,
+                                            int index);
+ 
++// LlamaParse API.
++// Function: FPDF_StructElement_GetChildObjNum
++//          Get the child's object number
++// Parameters:
++//          struct_element -   Handle to the struct element.
++//          index          -   The index for the child, 0-based.
++// Return value:
++//          The object number ID of the child. If no ID exists, returns -1.
++// Comments:
++//          If the child exists but is not a reference object, then this
++//          function will return -1. This will also return -1 for out of bounds
++//          indices.
++//          The |index| must be less than the FPDF_StructElement_CountChildren()
++//          return value.
++FPDF_EXPORT int FPDF_CALLCONV
++FPDF_StructElement_GetChildObjNum(FPDF_STRUCTELEMENT struct_element,
++                                  int index);
++
+ // Experimental API.
+ // Function: FPDF_StructElement_GetParent
+ //          Get the parent of the structure element.
+diff --git a/public/fpdf_text.h b/public/fpdf_text.h
+index fe96ccd5b..2bedfd25e 100644
+--- a/public/fpdf_text.h
++++ b/public/fpdf_text.h
+@@ -74,6 +74,19 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFText_CountChars(FPDF_TEXTPAGE text_page);
+ FPDF_EXPORT unsigned int FPDF_CALLCONV
+ FPDFText_GetUnicode(FPDF_TEXTPAGE text_page, int index);
+ 
++// LlamaParse API.
++// Function: FPDFText_GetCharCode
++//          Get original charater code of a character in a page.
++// Parameters:
++//          text_page   -   Handle to a text page information structure.
++//                          Returned by FPDFText_LoadPage function.
++//          index       -   Zero-based index of the character.
++// Return value:
++//          The char code of the particular character.
++//
++FPDF_EXPORT unsigned int FPDF_CALLCONV
++FPDFText_GetCharCode(FPDF_TEXTPAGE text_page, int index);
++
+ // Experimental API.
+ // Function: FPDFText_GetTextObject
+ //          Get the FPDF_PAGEOBJECT associated with a given character.
