@@ -15,6 +15,9 @@ apply_patch() {
 
 pushd "${SOURCE}"
 
+# apply llamaparse source changes prior to platform build patches
+apply_patch "$PATCHES/llamaparse/pdfium.patch"
+
 [ "$OS" != "emscripten" ] && apply_patch "$PATCHES/shared_library.patch"
 apply_patch "$PATCHES/public_headers.patch"
 

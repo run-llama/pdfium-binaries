@@ -1,8 +1,36 @@
+
 <p align="center">
   <img alt="PDFium binaries" src=".github/images/header.svg" />
 </p>
 
 # Pre-compiled binaries of PDFium
+
+## LlamaParse overview
+
+This repository is a fork of the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) used for automatically building PDFium with LlamaParse specific additions. LlamaParse changes live in `patches/llamaparse`.
+
+## To make modifications to PDFium:
+
+1. Obtain PDFium source from https://pdfium.googlesource.com/pdfium/ (requires using Google's toolchain for configuring/building Chromium)
+2. Apply the current LlamaParse patchset to PDFium source (from pdfium repo):
+   ```
+   patch --verbose -p1 <path-to-pdfium-binaries>/patches/llamaparse/pdfium.patch
+   ```
+3. Make additional changes
+    - To test changes, the simplest way to build is to run `build.sh` from this pdfium-binaries with `PDFium_URL` set in your environment to use your local PDFium source dir like:
+      ```
+      PDFium_URL=~git/my-pdfium-fork/pdfium ./build.sh 
+      ```
+      If you set a branch name in your local PDFium dir, pass `-b <branch-name>` into `./build.sh`
+    - After you have a local pdfium-binaries build, you can then copy `staging/*` into the platform repo `llamaparse/pdfium/pdfium-binaries/` directory
+4. Generate a new patch with your changes relative to PDFium `main` (from pdfium repo):
+   ```
+   git diff origin/main > <path-to-pdfium-binaries>/patches/llamaparse/pdfium.patch
+   ```
+5. Commit/push/etc your new patch in this pdfium-binaries fork
+   - If your patch is large enough to warrant it's own patch file, you need will also to add a corresponding `apply_patch` call in `steps/03-patch.sh`
+
+---
 
 [![Patches](https://github.com/bblanchon/pdfium-binaries/actions/workflows/patch.yml/badge.svg?branch=master)](https://github.com/bblanchon/pdfium-binaries/actions/workflows/patch.yml)
 [![Total downloads](https://img.shields.io/github/downloads/bblanchon/pdfium-binaries/total)](https://github.com/bblanchon/pdfium-binaries/releases/)
@@ -10,7 +38,6 @@
 [![Latest release](https://img.shields.io/github/v/release/bblanchon/pdfium-binaries?display_name=release&label=github)](https://github.com/bblanchon/pdfium-binaries/releases/latest/)
 [![Nuget](https://img.shields.io/nuget/v/bblanchon.PDFium)](https://www.nuget.org/packages/bblanchon.PDFium/)
 [![Conda](https://img.shields.io/conda/v/bblanchon/pdfium-binaries?label=conda)](https://anaconda.org/bblanchon/pdfium-binaries)
-
 
 This project hosts pre-compiled binaries of the [PDFium library](https://pdfium.googlesource.com/pdfium/), an open-source library for PDF manipulation and rendering.
 
