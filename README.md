@@ -7,7 +7,21 @@
 
 ## LlamaParse overview
 
-This repository is a fork of the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) used for automatically building PDFium with LlamaParse specific additions. LlamaParse changes live in `patches/llamaparse`.
+This repository is a fork of the [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) used for automatically building PDFium with LlamaParse specific additions.
+LlamaParse changes live in `patches/llamaparse`.
+
+Most platforms supported in the original pdfium-binaries have been removed or disabled in this fork.
+Currently we build for the following platforms (both with and without `v8` JS engine):
+
+- `linux-arm64`
+- `linux-x64`
+- `mac-arm64`
+
+Currently Parse only uses non-v8 `linux-x64` builds in production.
+Everything else is built for local development and testing.
+
+If for some reason you need another platform, if it's supported in the original pdfium-binaries it should still work in this fork (LlamaParse patches should never be platform specific).
+To re-enable a platform, re-add it to `.github/workflows/build-all.yml` (refer to the original repo for anything else that may need to be turned on for certain platforms).
 
 ## To make modifications to PDFium:
 

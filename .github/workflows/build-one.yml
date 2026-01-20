@@ -15,22 +15,14 @@ on:
         description: Target OS
         type: choice
         options:
-          - android
-          - emscripten
-          - ios
           - linux
           - mac
-          - win
       target_cpu:
         description: Target CPU
         type: choice
         options:
-          - arm
           - arm64
-          - ppc64
-          - x64
           - x86
-          - wasm
       target_environment:
         description: Target environment
         type: choice
@@ -38,9 +30,6 @@ on:
         options:
           - ''
           - device
-          - catalyst
-          - musl
-          - simulator
       enable_v8:
         description: Enable V8
         type: boolean
