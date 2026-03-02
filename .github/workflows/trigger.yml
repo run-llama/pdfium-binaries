@@ -33,7 +33,5 @@ jobs:
             "version": "${{ steps.chromium.outputs.version }}",
             "is_debug": "false",
             "enable_v8": "true",
-            "release": "true",
-            "nuget": "true",
-            "anaconda": "${{ steps.date.outputs.day <= 7 && 'true' || 'false' }}"
+            "release": "true"
           }
