@@ -6,6 +6,7 @@ OS="${PDFium_TARGET_OS:?}"
 TARGET_CPU="${PDFium_TARGET_CPU:?}"
 TARGET_ENVIRONMENT="${PDFium_TARGET_ENVIRONMENT:-}"
 ENABLE_V8=${PDFium_ENABLE_V8:-false}
+BUILD_TYPE=${PDFium_BUILD_TYPE:-shared}
 
 apply_patch() {
   local FILE="$1"
@@ -18,7 +19,7 @@ pushd "${SOURCE}"
 # apply llamaparse source changes prior to platform build patches
 apply_patch "$PATCHES/llamaparse/pdfium.patch"
 
-[ "$OS" != "emscripten" ] && apply_patch "$PATCHES/shared_library.patch"
+[ "$BUILD_TYPE" == "shared" ] && [ "$OS" != "emscripten" ] && apply_patch "$PATCHES/shared_library.patch"
 apply_patch "$PATCHES/public_headers.patch"
 
 [ "$ENABLE_V8" == "true" ] && apply_patch "$PATCHES/v8/pdfium.patch"
@@ -39,13 +40,13 @@ case "$OS" in
 
   linux)
     [ "$ENABLE_V8" == "true" ] && apply_patch "$PATCHES/linux/v8.patch" v8
+    apply_patch "$PATCHES/linux/build.patch" build
     ;;
 
   emscripten)
     apply_patch "$PATCHES/wasm/pdfium.patch"
     apply_patch "$PATCHES/wasm/build.patch" build
     if [ "$ENABLE_V8" == "true" ]; then
-      apply_patch "$PATCHES/wasm/skia.patch"
       apply_patch "$PATCHES/wasm/v8.patch" v8
     fi
     mkdir -p "build/config/wasm"
@@ -74,6 +75,7 @@ esac
 
 case "$TARGET_CPU" in
   ppc64)
+    apply_patch "$PATCHES/ppc64/pdfium.patch"
     apply_patch "$PATCHES/ppc64/build.patch" build
     ;;
 esac

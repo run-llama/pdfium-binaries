@@ -124,7 +124,7 @@ jobs:
       attestations: write # to attest build provenance
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
       - name: Create tarballs
         run: |
           for DIR in pdfium-*; do
@@ -133,7 +133,7 @@ jobs:
             echo "::endgroup::"
           done
       - name: Write release body
-        run: echo "This version was built with branch `$BRANCH` of PDFium" > RELEASE.md
+        run: echo "This version was built with branch \`$BRANCH\` of PDFium" > RELEASE.md
         env:
           BRANCH: ${{ github.event.inputs.branch }}
       - name: Get changes
