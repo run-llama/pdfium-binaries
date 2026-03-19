@@ -1,8 +1,32 @@
+diff --git a/core/fpdfapi/font/cpdf_cidfont.cpp b/core/fpdfapi/font/cpdf_cidfont.cpp
+index 46555b702..dd0c8bf59 100644
+--- a/core/fpdfapi/font/cpdf_cidfont.cpp
++++ b/core/fpdfapi/font/cpdf_cidfont.cpp
+@@ -908,3 +908,7 @@ const CIDTransform* CPDF_CIDFont::GetCIDTransform(uint16_t cid) const {
+              ? pTransform
+              : nullptr;
+ }
++
++bool CPDF_CIDFont::IsCIDType0() const {
++  return (font_type_ == CIDFontType::kType1);
++}
+diff --git a/core/fpdfapi/font/cpdf_cidfont.h b/core/fpdfapi/font/cpdf_cidfont.h
+index 629c9d927..fee827eac 100644
+--- a/core/fpdfapi/font/cpdf_cidfont.h
++++ b/core/fpdfapi/font/cpdf_cidfont.h
+@@ -72,6 +72,7 @@ class CPDF_CIDFont final : public CPDF_Font {
+   int16_t GetVertWidth(uint16_t cid) const;
+   CFX_Point16 GetVertOrigin(uint16_t cid) const;
+   int GetCharSize(uint32_t charcode) const;
++  bool IsCIDType0() const;
+ 
+  private:
+   enum class CIDFontType : bool {
 diff --git a/core/fpdfdoc/cpdf_structelement.cpp b/core/fpdfdoc/cpdf_structelement.cpp
-index e33e51efc..619887b6b 100644
+index 4448a02ff..0a162ac52 100644
 --- a/core/fpdfdoc/cpdf_structelement.cpp
 +++ b/core/fpdfdoc/cpdf_structelement.cpp
-@@ -96,6 +96,12 @@ int CPDF_StructElement::GetKidContentId(size_t index) const {
+@@ -100,6 +100,12 @@ int CPDF_StructElement::GetKidContentId(size_t index) const {
               : -1;
  }
  
@@ -16,10 +40,10 @@ index e33e51efc..619887b6b 100644
                                              CPDF_StructElement* pElement) {
    bool bSave = false;
 diff --git a/core/fpdfdoc/cpdf_structelement.h b/core/fpdfdoc/cpdf_structelement.h
-index f99df44b4..6dccd4d67 100644
+index 1578ade1a..8306fef6d 100644
 --- a/core/fpdfdoc/cpdf_structelement.h
 +++ b/core/fpdfdoc/cpdf_structelement.h
-@@ -35,6 +35,7 @@ class CPDF_StructElement final : public Retainable {
+@@ -36,6 +36,7 @@ class CPDF_StructElement final : public Retainable {
    size_t CountKids() const;
    CPDF_StructElement* GetKidIfElement(size_t index) const;
    int GetKidContentId(size_t index) const;
@@ -28,11 +52,11 @@ index f99df44b4..6dccd4d67 100644
                            CPDF_StructElement* pElement);
  
 diff --git a/fpdfsdk/fpdf_annot.cpp b/fpdfsdk/fpdf_annot.cpp
-index a67614241..b8ac84457 100644
+index 956c24c42..e1cd789ee 100644
 --- a/fpdfsdk/fpdf_annot.cpp
 +++ b/fpdfsdk/fpdf_annot.cpp
-@@ -1773,3 +1773,12 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
-   annot_dict->SetNewFor<CPDF_Reference>("FS", doc, fs_obj->GetObjNum());
+@@ -1769,3 +1769,12 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
+       "FS", doc, fs_obj->GetObjNum());
    return FPDFAttachmentFromCPDFObject(fs_obj);
  }
 +
@@ -45,10 +69,45 @@ index a67614241..b8ac84457 100644
 +  return pAnnotDict->GetObjNum();
 +}
 diff --git a/fpdfsdk/fpdf_edittext.cpp b/fpdfsdk/fpdf_edittext.cpp
-index 85db61bf0..ca9e29eb0 100644
+index 11925926a..a0239ca87 100644
 --- a/fpdfsdk/fpdf_edittext.cpp
 +++ b/fpdfsdk/fpdf_edittext.cpp
-@@ -1042,6 +1042,26 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+@@ -723,6 +723,34 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font) {
+   return pFont->GetFontFlags() & 0x7ffff;
+ }
+ 
++FPDF_EXPORT FPDF_FONT_TYPE FPDF_CALLCONV FPDFFont_GetType(FPDF_FONT font) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont) {
++    return FPDF_FONTTYPE_UNKNOWN;
++  }
++
++  // NOTE: Type0 (composite) is not exposed by underlying cpdf SDK,
++  // returned type for Type0 fonts will be the descendant CID font type.
++  if (pFont->IsType1Font()) {
++      return FPDF_FONTTYPE_TYPE1;
++  }
++  if (pFont->IsTrueTypeFont()) {
++      return FPDF_FONTTYPE_TRUETYPE;
++  }
++  if (pFont->IsType3Font()) {
++      return FPDF_FONTTYPE_TYPE3;
++  }
++  if (pFont->IsCIDFont()) {
++      CPDF_CIDFont* pCIDFont = pFont->AsCIDFont();
++      if (pCIDFont->IsCIDType0()) {
++          return FPDF_FONTTYPE_CID_TYPE0;
++      }
++      return FPDF_FONTTYPE_CID_TYPE2;
++  }
++
++  return FPDF_FONTTYPE_UNKNOWN;
++}
++
+ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetWeight(FPDF_FONT font) {
+   auto* cfont = CPDFFontFromFPDFFont(font);
+   if (!cfont) {
+@@ -788,6 +816,26 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
    return true;
  }
  
@@ -66,7 +125,7 @@ index 85db61bf0..ca9e29eb0 100644
 +    uint16_t cid = pCIDFont->CIDFromCharCode(char_code);
 +    *width = pCIDFont->GetVertWidth(cid) * font_size / 1000.f;
 +  } else {
-+    *width = pFont->GetCharWidthF(char_code) * font_size / 1000.f;
++    *width = pFont->GetCharWidth(char_code) * font_size / 1000.f;
 +  }
 +
 +  return true;
@@ -75,7 +134,7 @@ index 85db61bf0..ca9e29eb0 100644
  FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV
  FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
    auto* pFont = CPDFFontFromFPDFFont(font);
-@@ -1078,6 +1098,41 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
+@@ -825,6 +873,42 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
    return FPDFGlyphPathFromCFXPath(pPath);
  }
  
@@ -90,9 +149,10 @@ index 85db61bf0..ca9e29eb0 100644
 +    return nullptr;
 +  }
 +
-+  std::vector<TextCharPos> pos =
-+      GetCharPosList(pdfium::span_from_ref(char_code),
-+                     pdfium::span<const float>(), pFont, font_size);
++  static constexpr float kCharCodePosition = 0;
++  std::vector<TextCharPos> pos = pFont->GetCharPosList(
++      pdfium::span_from_ref(char_code), pdfium::span_from_ref(kCharCodePosition),
++      font_size);
 +  if (pos.empty()) {
 +    return nullptr;
 +  }
@@ -118,10 +178,10 @@ index 85db61bf0..ca9e29eb0 100644
  FPDFGlyphPath_CountGlyphSegments(FPDF_GLYPHPATH glyphpath) {
    auto* pPath = CFXPathFromFPDFGlyphPath(glyphpath);
 diff --git a/fpdfsdk/fpdf_structtree.cpp b/fpdfsdk/fpdf_structtree.cpp
-index fbae924a4..6bb7deca5 100644
+index 96455e726..d1ca4573d 100644
 --- a/fpdfsdk/fpdf_structtree.cpp
 +++ b/fpdfsdk/fpdf_structtree.cpp
-@@ -324,6 +324,18 @@ FPDF_StructElement_GetChildMarkedContentID(FPDF_STRUCTELEMENT struct_element,
+@@ -338,6 +338,18 @@ FPDF_StructElement_GetChildMarkedContentID(FPDF_STRUCTELEMENT struct_element,
    return elem->GetKidContentId(index);
  }
  
@@ -186,10 +246,48 @@ index 0aa9f6886..45cec5103 100644
  }  // extern "C"
  #endif  // __cplusplus
 diff --git a/public/fpdf_edit.h b/public/fpdf_edit.h
-index 0f3c4c5e9..4aabb9713 100644
+index 0f3c4c5e9..0cfd40c80 100644
 --- a/public/fpdf_edit.h
 +++ b/public/fpdf_edit.h
-@@ -1622,6 +1622,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+@@ -74,6 +74,22 @@
+ #define FPDF_PRINTMODE_POSTSCRIPT3_TYPE42 7
+ #define FPDF_PRINTMODE_POSTSCRIPT3_TYPE42_PASSTHROUGH 8
+ 
++// LlamaParse enum.
++// NOTE: we define an explicit enum for LlamaParse use to avoid conflicting with any
++// potential future upstream changes to FPDF_FONT_... macros (which currently only
++// define FPDF_FONT_TYPE1 and FPDF_FONT_TRUETYPE as of March 2026). Enum values for
++// current pdfium defines are preserved, all others are added in PDF32000 order (which
++// may differ from future pdfium addition order).
++typedef enum {
++    FPDF_FONTTYPE_UNKNOWN = 0,
++    FPDF_FONTTYPE_TYPE1 = 1,
++    FPDF_FONTTYPE_TRUETYPE = 2,
++    FPDF_FONTTYPE_TYPE0 = 3,
++    FPDF_FONTTYPE_TYPE3 = 4,
++    FPDF_FONTTYPE_CID_TYPE0 = 5,
++    FPDF_FONTTYPE_CID_TYPE2 = 6,
++} FPDF_FONT_TYPE;
++
+ typedef struct FPDF_IMAGEOBJ_METADATA {
+   // The image width in pixels.
+   unsigned int width;
+@@ -1553,6 +1569,14 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font);
+ // defined in ISO 32000-1:2008, table 123, -1 on failure.
+ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font);
+ 
++// LlamaParse API.
++// Get the type (and/or subtype) of a font.
++//
++// font - the handle to the font object.
++//
++// Returns LlamaParse FPDF_FONT_TYPE enum value.
++FPDF_EXPORT FPDF_FONT_TYPE FPDF_CALLCONV FPDFFont_GetType(FPDF_FONT font);
++
+ // Experimental API.
+ // Get the font weight of a font.
+ //
+@@ -1622,6 +1646,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
                                                             float font_size,
                                                             float* width);
  
@@ -214,7 +312,7 @@ index 0f3c4c5e9..4aabb9713 100644
  // Experimental API.
  // Get the glyphpath describing how to draw a font glyph.
  //
-@@ -1634,6 +1652,19 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
+@@ -1634,6 +1676,19 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
                                                                 uint32_t glyph,
                                                                 float font_size);
  
@@ -235,10 +333,10 @@ index 0f3c4c5e9..4aabb9713 100644
  // Get number of segments inside glyphpath.
  //
 diff --git a/public/fpdf_structtree.h b/public/fpdf_structtree.h
-index ea67fefd2..dc947d1cc 100644
+index c9823a634..b81aa4925 100644
 --- a/public/fpdf_structtree.h
 +++ b/public/fpdf_structtree.h
-@@ -286,6 +286,24 @@ FPDF_EXPORT int FPDF_CALLCONV
+@@ -308,6 +308,24 @@ FPDF_EXPORT int FPDF_CALLCONV
  FPDF_StructElement_GetChildMarkedContentID(FPDF_STRUCTELEMENT struct_element,
                                             int index);
  
