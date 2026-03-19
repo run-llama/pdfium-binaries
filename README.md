@@ -33,16 +33,22 @@ To re-enable a platform, re-add it to `.github/workflows/build-all.yml` (refer t
 3. Make additional changes
     - To test changes, the simplest way to build is to run `build.sh` from this pdfium-binaries with `PDFium_URL` set in your environment to use your local PDFium source dir like:
       ```
-      PDFium_URL=~git/my-pdfium-fork/pdfium ./build.sh 
+      PDFium_URL=~git/my-pdfium-fork/pdfium ./build.sh mac arm64
       ```
-      If you set a branch name in your local PDFium dir, pass `-b <branch-name>` into `./build.sh`
+      On x64 Linux, replace `mac arm64` with `linux x64`.
     - After you have a local pdfium-binaries build, you can then copy `staging/*` into the platform repo `llamaparse/pdfium/pdfium-binaries/` directory
+    - If you set a branch name in your local PDFium dir, pass `-b <branch-name>` into `./build.sh`.
 4. Generate a new patch with your changes relative to PDFium `main` (from pdfium repo):
    ```
    git diff origin/main > <path-to-pdfium-binaries>/patches/llamaparse/pdfium.patch
    ```
 5. Commit/push/etc your new patch in this pdfium-binaries fork
    - If your patch is large enough to warrant it's own patch file, you need will also to add a corresponding `apply_patch` call in `steps/03-patch.sh`
+
+### macOS local development:
+
+By default, the pdfium-binaries build scripts look for Xcode 26 where it is installed on Github Actions (`/Applications/Xcode_26.0.app`).
+If you have only one Xcode version installed, you may need to edit `steps/01-install.sh` to find Xcode on your local machine (i.e. `/Applications/Xcode.app` with no version string by default).
 
 ---
 
