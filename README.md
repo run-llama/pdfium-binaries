@@ -28,7 +28,7 @@ Here are the download links for the latest release:
   </tr>
 
   <tr>
-    <td rowspan="8">Linux</td>
+    <td rowspan="5">Linux</td>
     <td rowspan="5">glibc</td>
     <td>arm</td>
     <td><a href="https://github.com/run-llama/pdfium-binaries/releases/latest/download/pdfium-linux-arm.tgz">pdfium-linux-arm.tgz</a></td>
@@ -53,23 +53,6 @@ Here are the download links for the latest release:
     <td>x86</td>
     <td><a href="https://github.com/run-llama/pdfium-binaries/releases/latest/download/pdfium-linux-x86.tgz">pdfium-linux-x86.tgz</a></td>
     <td><a href="https://github.com/run-llama/pdfium-binaries/releases/latest/download/pdfium-v8-linux-x86.tgz">pdfium-v8-linux-x86.tgz</a></td>
-  </tr>
-
-  <tr>
-    <td rowspan="3">musl</td>
-    <td>arm64</td>
-    <td><a href="https://github.com/run-llama/pdfium-binaries/releases/latest/download/pdfium-linux-musl-arm64.tgz">pdfium-linux-musl-arm64.tgz</a></td>
-    <td>not available</td>
-  </tr>
-  <tr>
-    <td>x64</td>
-    <td><a href="https://github.com/run-llama/pdfium-binaries/releases/latest/download/pdfium-linux-musl-x64.tgz">pdfium-linux-musl-x64.tgz</a></td>
-    <td>not available</td>
-  </tr>
-  <tr>
-    <td>x86</td>
-    <td><a href="https://github.com/run-llama/pdfium-binaries/releases/latest/download/pdfium-linux-musl-x86.tgz">pdfium-linux-musl-x86.tgz</a></td>
-    <td>not available</td>
   </tr>
 
   <tr>

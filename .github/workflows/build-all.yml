@@ -141,44 +141,9 @@ jobs:
       target_cpu: x86
       enable_v8: true
 
-  linux_musl_arm64:
-    name: Linux musl ARM64
-    uses: ./.github/workflows/build.yml
-    secrets: inherit
-    with:
-      branch: ${{ github.event.inputs.branch }}
-      version: ${{ github.event.inputs.version }}
-      is_debug: ${{ github.event.inputs.is_debug == 'true' }}
-      target_os: linux
-      target_cpu: arm64
-      target_environment: musl
-      enable_v8: false
-
-  linux_musl_x64:
-    name: Linux musl x64
-    uses: ./.github/workflows/build.yml
-    secrets: inherit
-    with:
-      branch: ${{ github.event.inputs.branch }}
-      version: ${{ github.event.inputs.version }}
-      is_debug: ${{ github.event.inputs.is_debug == 'true' }}
-      target_os: linux
-      target_cpu: x64
-      target_environment: musl
-      enable_v8: false
-
-  linux_musl_x86:
-    name: Linux musl x86
-    uses: ./.github/workflows/build.yml
-    secrets: inherit
-    with:
-      branch: ${{ github.event.inputs.branch }}
-      version: ${{ github.event.inputs.version }}
-      is_debug: ${{ github.event.inputs.is_debug == 'true' }}
-      target_os: linux
-      target_cpu: x86
-      target_environment: musl
-      enable_v8: false
+  # NOTE: musl builds are disabled because musl.cc (the cross-compiler
+  # toolchain host) is unreachable. Re-enable when a mirror is available
+  # or MUSL_URL repo secret is configured.
 
   # ── macOS ──────────────────────────────────────────────
 
@@ -357,9 +322,6 @@ jobs:
       - linux_x64_v8
       - linux_x86
       - linux_x86_v8
-      - linux_musl_arm64
-      - linux_musl_x64
-      - linux_musl_x86
       - mac_arm64
       - mac_arm64_v8
       - mac_x64
