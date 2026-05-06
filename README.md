@@ -1,8 +1,3 @@
-
-<p align="center">
-  <img alt="PDFium binaries" src=".github/images/header.svg" />
-</p>
-
 # Pre-compiled binaries of PDFium (LlamaIndex fork)
 
 This repository is a fork of [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) that adds extra PDFium API functions useful for advanced PDF text extraction and analysis.
