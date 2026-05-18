@@ -111,20 +111,12 @@ jobs:
         run: steps/03-patch.sh
         shell: bash
 
-      - name: Install Emscripten SDK
-        if: inputs.target_os == 'emscripten'
-        run: steps/04-install-emsdk.sh
-        shell: bash
-
       - name: Install WASI SDK
         if: inputs.target_os == 'wasi'
         run: steps/04-install-wasi-sdk.sh
         shell: bash
 
-      - name: Install (2/2)
-        # Skip for wasm targets that have their own dedicated install steps above;
-        # only run for non-wasm targets (or keep and guard inside the script itself)
-        if: inputs.target_os != 'emscripten' && inputs.target_os != 'wasi'
+      - name: Install Extras
         run: steps/04-install-extras.sh
         shell: bash
 
