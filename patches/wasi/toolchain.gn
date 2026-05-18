@@ -10,9 +10,9 @@ gcc_toolchain("wasm32") {
   nm = "${_prefix}/llvm-nm"
   ld = cxx
 
-  extra_cflags = "--target=wasm32-wasi --sysroot=${sysroot} -Wno-unknown-warning-option"
-  extra_cxxflags = "--target=wasm32-wasi --sysroot=${sysroot} -Wno-unknown-warning-option"
-  extra_ldflags = "--target=wasm32-wasi --sysroot=${sysroot}"
+  extra_cflags = "--target=wasm32-wasip1 --sysroot=${sysroot} -Wno-unknown-warning-option"
+  extra_cxxflags = "--target=wasm32-wasip1 --sysroot=${sysroot} -Wno-unknown-warning-option"
+  extra_ldflags = "--target=wasm32-wasip1 --sysroot=${sysroot}"
 
   toolchain_args = {
     current_cpu = "wasm32"

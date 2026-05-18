@@ -18,11 +18,11 @@
 +is_wasi = current_os == "wasi"
  is_watchos = current_os == "watchos"
  is_win = current_os == "win" || current_os == "winuwp"
- 
+
  is_apple = is_ios || is_mac || is_watchos
 -is_posix = !is_win && !is_fuchsia
 +is_posix = !is_win && !is_fuchsia && !is_wasi
- 
+
  # =============================================================================
  # TARGET DEFAULTS
 --- a/config/compiler/BUILD.gn
@@ -34,7 +34,7 @@
 +  } else if (current_os == "wasi") {
 +    configs += [ "//build/config/wasi:compiler" ]
    }
- 
+
    configs += [
 @@ -456,7 +458,7 @@
        } else if (is_chromeos) {
@@ -45,3 +45,18 @@
            # Not available on aix.
            cflags += [ "-fstack-protector" ]
          }
+@@ -3185,8 +3187,12 @@
+     # All configs using /DEBUG should include this:
+     configs += [ ":win_pdbaltpath" ]
+   } else if (is_wasm) {
+-    cflags = [ "-gseparate-dwarf" ]
+-    ldflags = [ "-gseparate-dwarf" ]
++    if (!is_wasi) {
++      cflags = [ "-gseparate-dwarf" ]
++      ldflags = [ "-gseparate-dwarf" ]
++    } else {
++      cflags = []
++    }
+   } else {
+     if (use_debug_fission) {
+       configs += [ ":split_dwarf" ]
