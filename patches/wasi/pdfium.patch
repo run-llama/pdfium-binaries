@@ -37,62 +37,11 @@ index 67e1360..3340926 100644
    }
 
    if (is_android && !is_debug) {
-diff --git a/third_party/icu/source/common/umutex.h b/third_party/icu/source/common/umutex.h
---- a/third_party/icu/source/common/umutex.h
-+++ b/third_party/icu/source/common/umutex.h
-@@ -21,8 +21,12 @@
- #define UMUTEX_H
-
- #include <atomic>
-+#if !defined(__wasi__)
- #include <condition_variable>
- #include <mutex>
-+#else
-+#include <cstddef>
-+#endif
- #include <type_traits>
-
- #include "unicode/utypes.h"
-@@ -203,6 +207,30 @@
-  *    }         // myMutex is released when lock goes out of scope.
-  */
-
-+#if defined(__wasi__)
-+// WASI (wasip1) is single-threaded — UMutex is a no-op.
-+class U_COMMON_API_CLASS UMutex {
-+public:
-+    U_COMMON_API UMUTEX_CONSTEXPR UMutex() {}
-+    U_COMMON_API ~UMutex() = default;
-+
-+    UMutex(const UMutex& other) = delete;
-+    UMutex& operator=(const UMutex& other) = delete;
-+    void* operator new(size_t) = delete;
-+
-+    U_COMMON_API void lock() {}
-+    U_COMMON_API void unlock() {}
-+
-+    U_COMMON_API static void cleanup();
-+
-+private:
-+    UMutex *fListLink { nullptr };
-+    static UMutex *gListHead;
-+};
-+#else
- class U_COMMON_API_CLASS UMutex {
- public:
-     U_COMMON_API UMUTEX_CONSTEXPR UMutex() {}
-@@ -235,6 +263,7 @@
-     std::mutex *getMutex();
- };
-
-+#endif  // defined(__wasi__)
-
- /* Lock a mutex.
-  * @param mutex The given mutex to be locked.  Pass NULL to specify
 diff --git a/third_party/icu/source/common/umutex.cpp b/third_party/icu/source/common/umutex.cpp
+index 0c05396..28b5907 100644
 --- a/third_party/icu/source/common/umutex.cpp
 +++ b/third_party/icu/source/common/umutex.cpp
-@@ -28,6 +28,57 @@
+@@ -29,6 +29,55 @@
 
  U_NAMESPACE_BEGIN
 
@@ -145,14 +94,65 @@ diff --git a/third_party/icu/source/common/umutex.cpp b/third_party/icu/source/c
 +}
 +
 +#else  // !defined(__wasi__)
-+// ---- Original threading implementation ----
 
  #if defined(U_USER_MUTEX_CPP)
  // Support for including an alternate implementation of mutexes has been withdrawn.
-@@ -178,3 +229,5 @@
-     if (U_SUCCESS(*status)) {
+@@ -200,3 +249,5 @@ u_setAtomicIncDecFunctions(const void * /*context */, UMtxAtomicFn *, UMtxAtomic
          *status = U_UNSUPPORTED_ERROR;
      }
  }
 +
 +#endif  // defined(__wasi__)
+diff --git a/third_party/icu/source/common/umutex.h b/third_party/icu/source/common/umutex.h
+index 8ae6d10..268c21e 100644
+--- a/third_party/icu/source/common/umutex.h
++++ b/third_party/icu/source/common/umutex.h
+@@ -21,8 +21,12 @@
+ #define UMUTEX_H
+
+ #include <atomic>
++#if !defined(__wasi__)
+ #include <condition_variable>
+ #include <mutex>
++#else
++#include <cstddef>
++#endif
+ #include <type_traits>
+
+ #include "unicode/utypes.h"
+@@ -202,6 +206,27 @@ template<class T> void umtx_initOnce(UInitOnce &uio, void (U_CALLCONV *fp)(T, UE
+  *    }         // myMutex is released when lock goes out of scope.
+  */
+
++#if defined(__wasi__)
++// WASI (wasip1) is single-threaded; UMutex is a no-op.
++class U_COMMON_API_CLASS UMutex {
++public:
++    U_COMMON_API UMUTEX_CONSTEXPR UMutex() {}
++    U_COMMON_API ~UMutex() = default;
++
++    UMutex(const UMutex& other) = delete;
++    UMutex& operator=(const UMutex& other) = delete;
++    void* operator new(size_t) = delete;
++
++    U_COMMON_API void lock() {}
++    U_COMMON_API void unlock() {}
++
++    U_COMMON_API static void cleanup();
++
++private:
++    UMutex *fListLink { nullptr };
++    static UMutex *gListHead;
++};
++#else
+ class U_COMMON_API_CLASS UMutex {
+ public:
+     U_COMMON_API UMUTEX_CONSTEXPR UMutex() {}
+@@ -237,6 +262,7 @@ private:
+      */
+     std::mutex *getMutex();
+ };
++#endif  // defined(__wasi__)
+
+
+ /* Lock a mutex.
