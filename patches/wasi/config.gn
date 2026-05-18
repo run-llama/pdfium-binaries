@@ -24,5 +24,8 @@ config("compiler") {
 
     # Enable WASI's minimal mmap emulation (backed by malloc+read).
     "_WASI_EMULATED_MMAN",
+
+    # Enable WASI's minimal signal emulation.
+    "_WASI_EMULATED_SIGNAL",
   ]
 }
