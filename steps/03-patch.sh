@@ -19,7 +19,7 @@ pushd "${SOURCE}"
 # apply llamaparse source changes prior to platform build patches
 apply_patch "$PATCHES/llamaparse/pdfium.patch"
 
-[ "$BUILD_TYPE" == "shared" ] && [ "$OS" != "emscripten" ] && apply_patch "$PATCHES/shared_library.patch"
+[ "$BUILD_TYPE" == "shared" ] && [ "$OS" != "emscripten" ] && [ "$OS" != "wasi" ] && apply_patch "$PATCHES/shared_library.patch"
 apply_patch "$PATCHES/public_headers.patch"
 
 [ "$ENABLE_V8" == "true" ] && apply_patch "$PATCHES/v8/pdfium.patch"
