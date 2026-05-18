@@ -37,3 +37,122 @@ index 67e1360..3340926 100644
    }
 
    if (is_android && !is_debug) {
+diff --git a/third_party/icu/source/common/umutex.h b/third_party/icu/source/common/umutex.h
+--- a/third_party/icu/source/common/umutex.h
++++ b/third_party/icu/source/common/umutex.h
+@@ -21,8 +21,12 @@
+ #define UMUTEX_H
+
+ #include <atomic>
++#if !defined(__wasi__)
+ #include <condition_variable>
+ #include <mutex>
++#else
++#include <cstddef>
++#endif
+ #include <type_traits>
+
+ #include "unicode/utypes.h"
+@@ -203,6 +207,30 @@
+  *    }         // myMutex is released when lock goes out of scope.
+  */
+
++#if defined(__wasi__)
++// WASI (wasip1) is single-threaded — UMutex is a no-op.
++class U_COMMON_API_CLASS UMutex {
++public:
++    U_COMMON_API UMUTEX_CONSTEXPR UMutex() {}
++    U_COMMON_API ~UMutex() = default;
++
++    UMutex(const UMutex& other) = delete;
++    UMutex& operator=(const UMutex& other) = delete;
++    void* operator new(size_t) = delete;
++
++    U_COMMON_API void lock() {}
++    U_COMMON_API void unlock() {}
++
++    U_COMMON_API static void cleanup();
++
++private:
++    UMutex *fListLink { nullptr };
++    static UMutex *gListHead;
++};
++#else
+ class U_COMMON_API_CLASS UMutex {
+ public:
+     U_COMMON_API UMUTEX_CONSTEXPR UMutex() {}
+@@ -235,6 +263,7 @@
+     std::mutex *getMutex();
+ };
+
++#endif  // defined(__wasi__)
+
+ /* Lock a mutex.
+  * @param mutex The given mutex to be locked.  Pass NULL to specify
+diff --git a/third_party/icu/source/common/umutex.cpp b/third_party/icu/source/common/umutex.cpp
+--- a/third_party/icu/source/common/umutex.cpp
++++ b/third_party/icu/source/common/umutex.cpp
+@@ -28,6 +28,57 @@
+
+ U_NAMESPACE_BEGIN
+
++#if defined(__wasi__)
++// WASI is single-threaded.  Provide trivial implementations of all
++// mutex / init-once helpers so that ICU links without std::mutex.
++
++UMutex *UMutex::gListHead = nullptr;
++
++void UMutex::cleanup() {
++    gListHead = nullptr;
++}
++
++U_CAPI void U_EXPORT2
++umtx_lock(UMutex *) {}
++
++U_CAPI void U_EXPORT2
++umtx_unlock(UMutex *) {}
++
++U_COMMON_API UBool U_EXPORT2
++umtx_initImplPreInit(UInitOnce &uio) {
++    if (umtx_loadAcquire(uio.fState) == 0) {
++        umtx_storeRelease(uio.fState, 1);
++        return true;
++    }
++    return false;
++}
++
++U_COMMON_API void U_EXPORT2
++umtx_initImplPostInit(UInitOnce &uio) {
++    umtx_storeRelease(uio.fState, 2);
++}
++
++U_NAMESPACE_END
++
++U_DEPRECATED void U_EXPORT2
++u_setMutexFunctions(const void *, UMtxInitFn *, UMtxFn *,
++                    UMtxFn *,  UMtxFn *, UErrorCode *status) {
++    if (U_SUCCESS(*status)) {
++        *status = U_UNSUPPORTED_ERROR;
++    }
++}
++
++U_DEPRECATED void U_EXPORT2
++u_setAtomicIncDecFunctions(const void *, UMtxAtomicFn *, UMtxAtomicFn *,
++                           UErrorCode *status) {
++    if (U_SUCCESS(*status)) {
++        *status = U_UNSUPPORTED_ERROR;
++    }
++}
++
++#else  // !defined(__wasi__)
++// ---- Original threading implementation ----
+
+ #if defined(U_USER_MUTEX_CPP)
+ // Support for including an alternate implementation of mutexes has been withdrawn.
+@@ -178,3 +229,5 @@
+     if (U_SUCCESS(*status)) {
+         *status = U_UNSUPPORTED_ERROR;
+     }
+ }
++
++#endif  // defined(__wasi__)
