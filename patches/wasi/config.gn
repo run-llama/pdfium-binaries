@@ -1,0 +1,6 @@
+config("compiler") {
+  defines = [
+    # WASI provides a POSIX-compatible C library via wasi-libc.
+    "_POSIX_C_SOURCE=200112",
+  ]
+}

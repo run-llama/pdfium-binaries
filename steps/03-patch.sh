@@ -52,6 +52,15 @@ case "$OS" in
     cp "$PATCHES/wasm/config.gn" "build/config/wasm/BUILD.gn"
     ;;
 
+  wasi)
+    apply_patch "$PATCHES/wasi/pdfium.patch"
+    apply_patch "$PATCHES/wasi/build.patch" build
+    mkdir -p "build/toolchain/wasi"
+    cp "$PATCHES/wasi/toolchain.gn" "build/toolchain/wasi/BUILD.gn"
+    mkdir -p "build/config/wasi"
+    cp "$PATCHES/wasi/config.gn" "build/config/wasi/BUILD.gn"
+    ;;
+
   win)
     apply_patch "$PATCHES/win/build.patch" build
 
