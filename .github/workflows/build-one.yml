@@ -21,6 +21,7 @@ on:
           - linux
           - mac
           - win
+          - wasi
       target_cpu:
         description: Target CPU
         type: choice
@@ -34,9 +35,9 @@ on:
       target_environment:
         description: Target environment
         type: choice
-        default: ''
+        default: ""
         options:
-          - ''
+          - ""
           - device
           - catalyst
           - musl
