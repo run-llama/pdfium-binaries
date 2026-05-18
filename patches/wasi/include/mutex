@@ -95,4 +95,8 @@ private:
 
 }  // namespace std
 
+// The real <mutex> pulls in <condition_variable> transitively.  Code like
+// unifiedcache.cpp relies on that, so do the same here.
+#include <condition_variable>
+
 #endif  // _WASI_STUB_MUTEX_

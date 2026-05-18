@@ -10,11 +10,8 @@ gcc_toolchain("wasm32") {
   nm = "${_prefix}/llvm-nm"
   ld = cxx
 
-  _wasi_stubs = rebase_path("//build/config/wasi/include", root_build_dir)
-  _sysroot_cxx = "${sysroot}/include/wasm32-wasip1/c++/v1"
-  _sysroot_cxx2 = "${sysroot}/include/c++/v1"
   extra_cflags = "--target=wasm32-wasip1 --sysroot=${sysroot} -Wno-unknown-warning-option"
-  extra_cxxflags = "--target=wasm32-wasip1 --sysroot=${sysroot} -Wno-unknown-warning-option -nostdinc++ -isystem ${_wasi_stubs} -isystem ${_sysroot_cxx} -isystem ${_sysroot_cxx2}"
+  extra_cxxflags = "--target=wasm32-wasip1 --sysroot=${sysroot} -Wno-unknown-warning-option"
   extra_ldflags = "--target=wasm32-wasip1 --sysroot=${sysroot}"
 
   toolchain_args = {
