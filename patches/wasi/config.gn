@@ -4,7 +4,6 @@ config("compiler") {
   # first on the include path makes them shadow the real (missing) headers
   # from the wasi-sdk sysroot.
   cflags = []
-  include_dirs = [ "//build/config/wasi/include" ]
 
   defines = [
     # WASI provides a POSIX-compatible C library via wasi-libc.
