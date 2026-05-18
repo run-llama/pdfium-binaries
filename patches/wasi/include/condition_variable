@@ -1,0 +1,32 @@
+// WASI stub: <condition_variable>
+// WASI (wasip1) is single-threaded.  Provide a minimal no-op implementation.
+#ifndef _WASI_STUB_CONDITION_VARIABLE_
+#define _WASI_STUB_CONDITION_VARIABLE_
+
+#include <mutex>
+
+namespace std {
+
+enum class cv_status { no_timeout, timeout };
+
+class condition_variable {
+public:
+    condition_variable() = default;
+    ~condition_variable() = default;
+    condition_variable(const condition_variable&) = delete;
+    condition_variable& operator=(const condition_variable&) = delete;
+
+    void notify_one() noexcept {}
+    void notify_all() noexcept {}
+
+    void wait(unique_lock<mutex>&) {}
+
+    template <class Predicate>
+    void wait(unique_lock<mutex>&, Predicate pred) {
+        while (!pred()) {}
+    }
+};
+
+}  // namespace std
+
+#endif  // _WASI_STUB_CONDITION_VARIABLE_

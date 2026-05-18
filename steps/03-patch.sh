@@ -59,6 +59,11 @@ case "$OS" in
     cp "$PATCHES/wasi/toolchain.gn" "build/toolchain/wasi/BUILD.gn"
     mkdir -p "build/config/wasi"
     cp "$PATCHES/wasi/config.gn" "build/config/wasi/BUILD.gn"
+    # Stub threading headers (std::mutex, std::condition_variable) for
+    # single-threaded WASI — shadows the missing sysroot headers.
+    mkdir -p "build/config/wasi/include"
+    cp "$PATCHES/wasi/include/mutex" "build/config/wasi/include/mutex"
+    cp "$PATCHES/wasi/include/condition_variable" "build/config/wasi/include/condition_variable"
     ;;
 
   win)

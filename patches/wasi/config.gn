@@ -1,4 +1,11 @@
 config("compiler") {
+  # Stub threading headers (no-op std::mutex, std::condition_variable, etc.)
+  # are copied into build/config/wasi/include/ by 03-patch.sh.  Placing them
+  # first on the include path makes them shadow the real (missing) headers
+  # from the wasi-sdk sysroot.
+  cflags = [ "-isystem", rebase_path("//build/config/wasi/include",
+                                      root_build_dir) ]
+
   defines = [
     # WASI provides a POSIX-compatible C library via wasi-libc.
     "_POSIX_C_SOURCE=200112",
