@@ -6,6 +6,7 @@
 #define _LIBCPP_CONDITION_VARIABLE
 
 #include <mutex>
+#include <chrono>
 
 namespace std {
 
@@ -26,6 +27,26 @@ public:
     template <class Predicate>
     void wait(unique_lock<mutex>&, Predicate pred) {
         while (!pred()) {}
+    }
+
+    template <class Rep, class Period>
+    cv_status wait_for(unique_lock<mutex>&, const chrono::duration<Rep, Period>&) {
+        return cv_status::timeout;
+    }
+
+    template <class Rep, class Period, class Predicate>
+    bool wait_for(unique_lock<mutex>&, const chrono::duration<Rep, Period>&, Predicate pred) {
+        return pred();
+    }
+
+    template <class Clock, class Duration>
+    cv_status wait_until(unique_lock<mutex>&, const chrono::time_point<Clock, Duration>&) {
+        return cv_status::timeout;
+    }
+
+    template <class Clock, class Duration, class Predicate>
+    bool wait_until(unique_lock<mutex>&, const chrono::time_point<Clock, Duration>&, Predicate pred) {
+        return pred();
     }
 };
 
