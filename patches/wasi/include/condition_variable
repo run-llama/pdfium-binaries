@@ -6,7 +6,11 @@
 #define _LIBCPP_CONDITION_VARIABLE
 
 #include <mutex>
-#include <chrono>
+
+// NOTE: Do not #include <chrono> here — it can transitively pull in
+// the real <condition_variable> or <mutex> and conflict with our stubs.
+// Instead, the wait_for/wait_until templates accept any type and just
+// return immediately (single-threaded, nothing to wait for).
 
 namespace std {
 
@@ -29,23 +33,23 @@ public:
         while (!pred()) {}
     }
 
-    template <class Rep, class Period>
-    cv_status wait_for(unique_lock<mutex>&, const chrono::duration<Rep, Period>&) {
+    template <class _Duration>
+    cv_status wait_for(unique_lock<mutex>&, const _Duration&) {
         return cv_status::timeout;
     }
 
-    template <class Rep, class Period, class Predicate>
-    bool wait_for(unique_lock<mutex>&, const chrono::duration<Rep, Period>&, Predicate pred) {
+    template <class _Duration, class Predicate>
+    bool wait_for(unique_lock<mutex>&, const _Duration&, Predicate pred) {
         return pred();
     }
 
-    template <class Clock, class Duration>
-    cv_status wait_until(unique_lock<mutex>&, const chrono::time_point<Clock, Duration>&) {
+    template <class _TimePoint>
+    cv_status wait_until(unique_lock<mutex>&, const _TimePoint&) {
         return cv_status::timeout;
     }
 
-    template <class Clock, class Duration, class Predicate>
-    bool wait_until(unique_lock<mutex>&, const chrono::time_point<Clock, Duration>&, Predicate pred) {
+    template <class _TimePoint, class Predicate>
+    bool wait_until(unique_lock<mutex>&, const _TimePoint&, Predicate pred) {
         return pred();
     }
 };
