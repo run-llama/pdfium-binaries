@@ -4,8 +4,12 @@ config("compiler") {
     "_POSIX_C_SOURCE=200112",
 
     # WASI has no POSIX timezone APIs (tzset, timezone, tzname).
-    # Pre-define these so ICU's putilimp.h skips the fallback definitions.
-    "U_TZSET=",
+    # Defining U_HAVE_* prevents putilimp.h from falling through to its
+    # #else branch which would #define U_TZSET/U_TIMEZONE/U_TZNAME to
+    # POSIX symbols that don't exist in wasi-libc.  The actual U_TZSET,
+    # U_TIMEZONE, U_TZNAME macros stay undefined, so putil.cpp's
+    # #ifdef guards will exclude the unsupported calls.
+    "U_HAVE_TZSET=0",
     "U_HAVE_TIMEZONE=0",
     "U_HAVE_TZNAME=0",
 
