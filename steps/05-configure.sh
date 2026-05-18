@@ -1,5 +1,4 @@
 #!/bin/bash -eux
-
 OS=${PDFium_TARGET_OS:?}
 SOURCE=${PDFium_SOURCE_DIR:-pdfium}
 BUILD=${PDFium_BUILD_DIR:-$SOURCE/out}
@@ -8,6 +7,10 @@ TARGET_ENVIRONMENT=${PDFium_TARGET_ENVIRONMENT:-}
 ENABLE_V8=${PDFium_ENABLE_V8:-false}
 IS_DEBUG=${PDFium_IS_DEBUG:-false}
 BUILD_TYPE=${PDFium_BUILD_TYPE:-shared}
+# WASI SDK — set by 04-install-wasi-sdk.sh; fall back to empty so the
+# non-wasi path never fails an unbound-variable check.
+WASI_SDK_PATH=${WASI_SDK_PATH:-}
+WASI_SYSROOT=${WASI_SYSROOT:-}
 
 mkdir -p "$BUILD"
 
@@ -45,7 +48,8 @@ mkdir -p "$BUILD"
       ;;
     linux)
       echo "clang_use_chrome_plugins = false"
-      # AOTW, //build/config/sysroot.gni lacks handling of ppc64, so we manually set the sysroot to ensure working builds with proper glibc requirement
+      # AOTW, //build/config/sysroot.gni lacks handling of ppc64, so we manually
+      # set the sysroot to ensure working builds with proper glibc requirement.
       if [ "$TARGET_CPU" == "ppc64" ]; then
         echo "use_sysroot = true"
         echo "sysroot = \"//build/linux/debian_bullseye_ppc64el-sysroot\""
@@ -63,6 +67,42 @@ mkdir -p "$BUILD"
         echo "v8_snapshot_toolchain = \"//build/toolchain/linux:x86\""
         # Don't try to build libc++ because it requires GCC 14+
         echo 'use_custom_libcxx_for_host = false'
+      fi
+      ;;
+    wasi)
+      # Validate that the WASI SDK was installed by 04-install-wasi-sdk.sh
+      if [ -z "$WASI_SDK_PATH" ]; then
+        echo "ERROR: WASI_SDK_PATH is not set. Was 04-install-wasi-sdk.sh run?" >&2
+        exit 1
+      fi
+      if [ -z "$WASI_SYSROOT" ]; then
+        echo "ERROR: WASI_SYSROOT is not set. Was 04-install-wasi-sdk.sh run?" >&2
+        exit 1
+      fi
+
+      # WASI builds are always fully static — no dynamic linking in the runtime
+      echo 'pdf_is_complete_lib = true'
+
+      # Use the WASI SDK clang, not Chromium's bundled one
+      echo 'is_clang = true'
+      echo "clang_base_path = \"$WASI_SDK_PATH\""
+      echo 'clang_use_chrome_plugins = false'
+
+      # No system libcxx — the WASI sysroot provides libc; we use it directly
+      echo 'use_custom_libcxx = false'
+      echo 'use_custom_libcxx_for_host = false'
+
+      # Point GN at the WASI sysroot for all includes and libs
+      echo "sysroot = \"$WASI_SYSROOT\""
+      echo 'use_sysroot = true'
+
+      # WASI has no POSIX threads, no sandbox, no glib
+      echo 'use_glib = false'
+
+      # V8 does not support WASI; guard here rather than relying on the caller
+      if [ "$ENABLE_V8" == "true" ]; then
+        echo "ERROR: V8 is not supported on WASI." >&2
+        exit 1
       fi
       ;;
   esac
@@ -87,7 +127,6 @@ mkdir -p "$BUILD"
       esac
       ;;
   esac
-
 ) | sort > "$BUILD/args.gn"
 
 # Generate Ninja files

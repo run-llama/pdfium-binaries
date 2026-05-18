@@ -292,14 +292,25 @@ jobs:
 
   # ── WASM ───────────────────────────────────────────────
 
-  wasm:
-    name: WASM
+  wasm-emscripten:
+    name: WASM (emscripten)
     uses: ./.github/workflows/build.yml
     with:
       branch: ${{ github.event.inputs.branch }}
       version: ${{ github.event.inputs.version }}
       is_debug: ${{ github.event.inputs.is_debug == 'true' }}
       target_os: emscripten
+      target_cpu: wasm
+      enable_v8: false
+
+  wasm-wasi:
+    name: WASM (wasi)
+    uses: ./.github/workflows/build.yml
+    with:
+      branch: ${{ github.event.inputs.branch }}
+      version: ${{ github.event.inputs.version }}
+      is_debug: ${{ github.event.inputs.is_debug == 'true' }}
+      target_os: wasi
       target_cpu: wasm
       enable_v8: false
 
@@ -334,7 +345,8 @@ jobs:
       - win_x64_v8
       - win_x86
       - win_x86_v8
-      - wasm
+      - wasm-emscripten
+      - wasm-wasi
     permissions:
       contents: write # to create releases
       id-token: write # to attest build provenance
