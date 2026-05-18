@@ -2,6 +2,8 @@
 // WASI (wasip1) is single-threaded.  Provide a minimal no-op implementation.
 #ifndef _WASI_STUB_CONDITION_VARIABLE_
 #define _WASI_STUB_CONDITION_VARIABLE_
+// Also define libc++'s include guard so the real (empty) header is skipped.
+#define _LIBCPP_CONDITION_VARIABLE
 
 #include <mutex>
 

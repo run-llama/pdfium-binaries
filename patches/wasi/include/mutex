@@ -7,6 +7,9 @@
 // guarded, so we must define them ourselves.
 #ifndef _WASI_STUB_MUTEX_
 #define _WASI_STUB_MUTEX_
+// Also define libc++'s include guard so the real (empty) <mutex> is skipped
+// if something tries to include it after us.
+#define _LIBCPP_MUTEX
 
 // Pull in once_flag / call_once — available even without threads.
 #include <__mutex/once_flag.h>
