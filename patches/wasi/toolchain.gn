@@ -1,0 +1,20 @@
+import("//build/toolchain/gcc_toolchain.gni")
+
+gcc_toolchain("wasm32") {
+  cc = "${clang_base_path}/bin/clang"
+  cxx = "${clang_base_path}/bin/clang++"
+  ar = "${clang_base_path}/bin/llvm-ar"
+  readelf = "${clang_base_path}/bin/llvm-readelf"
+  nm = "${clang_base_path}/bin/llvm-nm"
+  ld = cxx
+
+  extra_cflags = "--target=wasm32-wasi --sysroot=${sysroot} -Wno-unknown-warning-option"
+  extra_cxxflags = "--target=wasm32-wasi --sysroot=${sysroot} -Wno-unknown-warning-option"
+  extra_ldflags = "--target=wasm32-wasi --sysroot=${sysroot}"
+
+  toolchain_args = {
+    current_cpu = "wasm32"
+    current_os = "wasi"
+    is_clang = true
+  }
+}
