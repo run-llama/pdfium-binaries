@@ -21,5 +21,8 @@ config("compiler") {
 
     # WASI has no mmap.
     "U_HAVE_MMAP=0",
+
+    # Enable WASI's minimal mmap emulation (backed by malloc+read).
+    "_WASI_EMULATED_MMAN",
   ]
 }
