@@ -58,6 +58,10 @@ case "$OS-$BUILD_TYPE" in
     rm "$STAGING/PDFiumConfig.cmake"
     ;;
 
+  wasi-*)
+    mv "$BUILD/obj/libpdfium.a" "$STAGING_LIB"
+    ;;
+
   win-shared)
     mv "$BUILD/pdfium.dll.lib" "$STAGING_LIB"
     mkdir -p "$STAGING_BIN"

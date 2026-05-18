@@ -154,6 +154,11 @@ case "$OS" in
     # TODO: add test for Wasm
     SKIP_TESTS=true
     ;;
+
+  wasi)
+    # Cannot run WASI binaries in the test harness yet
+    SKIP_TESTS=true
+    ;;
 esac
 
 CMAKE_ARGS+=("$SOURCE_DIR")
