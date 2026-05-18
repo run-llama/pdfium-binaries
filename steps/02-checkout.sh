@@ -13,7 +13,12 @@ fi
 
 # Clone
 gclient config --unmanaged "$PDFium_URL" "${CONFIG_ARGS[@]-}"
-echo "target_os = [ '$OS' ]" >> .gclient
+# For wasi builds, also pull linux deps so Chromium's bundled clang is downloaded
+if [ "$OS" == "wasi" ]; then
+  echo "target_os = [ 'linux' ]" >> .gclient
+else
+  echo "target_os = [ '$OS' ]" >> .gclient
+fi
 
 
 # Reset
