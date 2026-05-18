@@ -2,5 +2,14 @@ config("compiler") {
   defines = [
     # WASI provides a POSIX-compatible C library via wasi-libc.
     "_POSIX_C_SOURCE=200112",
+
+    # WASI has no POSIX timezone APIs (tzset, timezone, tzname).
+    # Pre-define these so ICU's putilimp.h skips the fallback definitions.
+    "U_TZSET=",
+    "U_HAVE_TIMEZONE=0",
+    "U_HAVE_TZNAME=0",
+
+    # WASI has no mmap.
+    "U_HAVE_MMAP=0",
   ]
 }
