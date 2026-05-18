@@ -59,11 +59,6 @@ case "$OS" in
     cp "$PATCHES/wasi/toolchain.gn" "build/toolchain/wasi/BUILD.gn"
     mkdir -p "build/config/wasi"
     cp "$PATCHES/wasi/config.gn" "build/config/wasi/BUILD.gn"
-
-    # Strip compiler flags unsupported by wasi-sdk's clang
-    sed -i'' -e '/-fdiagnostics-show-inlining-chain/d' build/config/compiler/BUILD.gn
-    sed -i'' -e '/-gseparate-dwarf/d' build/config/compiler/BUILD.gn
-    sed -i'' -e '/-fsanitize-ignore-for-ubsan-feature/d' build/config/compiler/BUILD.gn
     ;;
 
   win)

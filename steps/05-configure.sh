@@ -71,10 +71,6 @@ mkdir -p "$BUILD"
       ;;
     wasi)
       # Validate that the WASI SDK was installed by 04-install-wasi-sdk.sh
-      if [ -z "$WASI_SDK_PATH" ]; then
-        echo "ERROR: WASI_SDK_PATH is not set. Was 04-install-wasi-sdk.sh run?" >&2
-        exit 1
-      fi
       if [ -z "$WASI_SYSROOT" ]; then
         echo "ERROR: WASI_SYSROOT is not set. Was 04-install-wasi-sdk.sh run?" >&2
         exit 1
@@ -83,9 +79,10 @@ mkdir -p "$BUILD"
       # WASI builds are always fully static — no dynamic linking in the runtime
       echo 'pdf_is_complete_lib = true'
 
-      # Use the WASI SDK clang, not Chromium's bundled one
+      # Use Chromium's bundled clang (default) — it already supports
+      # --target=wasm32-wasi and knows all the flags the build system emits.
+      # The toolchain.gn passes --target and --sysroot via extra_cflags.
       echo 'is_clang = true'
-      echo "clang_base_path = \"$WASI_SDK_PATH\""
       echo 'clang_use_chrome_plugins = false'
 
       # No system libcxx — the WASI sysroot provides libc; we use it directly
