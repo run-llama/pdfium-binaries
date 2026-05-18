@@ -1,11 +1,13 @@
 import("//build/toolchain/gcc_toolchain.gni")
 
 gcc_toolchain("wasm32") {
-  cc = "${clang_base_path}/bin/clang"
-  cxx = "${clang_base_path}/bin/clang++"
-  ar = "${clang_base_path}/bin/llvm-ar"
-  readelf = "${clang_base_path}/bin/llvm-readelf"
-  nm = "${clang_base_path}/bin/llvm-nm"
+  _prefix = rebase_path("$clang_base_path/bin", root_build_dir)
+
+  cc = "${_prefix}/clang"
+  cxx = "${_prefix}/clang++"
+  ar = "${_prefix}/llvm-ar"
+  readelf = "${_prefix}/llvm-readelf"
+  nm = "${_prefix}/llvm-nm"
   ld = cxx
 
   extra_cflags = "--target=wasm32-wasi --sysroot=${sysroot} -Wno-unknown-warning-option"
