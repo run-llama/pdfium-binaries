@@ -17,8 +17,9 @@ mkdir -p "$BUILD"
 (
   echo "is_debug = $IS_DEBUG"
   if [ "$IS_DEBUG" != "true" ]; then
-    echo "is_official_build = true"
     echo "symbol_level = 0"
+    echo "use_thin_lto = true"
+    echo "chrome_pgo_phase = 0"
   fi
   echo "pdf_is_standalone = true"
   echo "pdf_use_partition_alloc = false"
