@@ -60,6 +60,15 @@ case "$OS-$BUILD_TYPE" in
 
   wasi-*)
     mv "$BUILD/obj/libpdfium.a" "$STAGING_LIB"
+    # Ship WASI sysroot libraries so consumers can resolve all C/C++ runtime
+    # symbols at link time. Without these, libc/libc++ functions appear as
+    # unresolved "env::" imports in the final .wasm binary.
+    SYSROOT_LIB="${WASI_SYSROOT:?}/lib/wasm32-wasip1"
+    cp "$SYSROOT_LIB/libc.a"                    "$STAGING_LIB"
+    cp "$SYSROOT_LIB/libc++.a"                  "$STAGING_LIB"
+    cp "$SYSROOT_LIB/libc++abi.a"               "$STAGING_LIB"
+    cp "$SYSROOT_LIB/libwasi-emulated-mman.a"   "$STAGING_LIB"
+    cp "$SYSROOT_LIB/libwasi-emulated-signal.a" "$STAGING_LIB"
     ;;
 
   win-shared)
