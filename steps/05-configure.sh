@@ -18,7 +18,9 @@ mkdir -p "$BUILD"
   echo "is_debug = $IS_DEBUG"
   if [ "$IS_DEBUG" != "true" ]; then
     echo "symbol_level = 0"
-    echo "use_thin_lto = true"
+    if [ "$OS" != "emscripten" ] && [ "$OS" != "wasi" ]; then
+      echo "use_thin_lto = true"
+    fi
     echo "chrome_pgo_phase = 0"
   fi
   echo "pdf_is_standalone = true"
