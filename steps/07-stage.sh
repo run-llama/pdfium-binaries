@@ -63,10 +63,15 @@ case "$OS-$BUILD_TYPE" in
     # Ship WASI sysroot libraries so consumers can resolve all C/C++ runtime
     # symbols at link time. Without these, libc/libc++ functions appear as
     # unresolved "env::" imports in the final .wasm binary.
+    #
+    # In WASI SDK 24+:
+    #   - C libs (libc, wasi-emulated-*) are under $WASI_SYSROOT/lib/wasm32-wasip1/
+    #   - C++ libs (libc++, libc++abi) are under $WASI_SDK_PATH/lib/wasm32-wasip1/
     SYSROOT_LIB="${WASI_SYSROOT:?}/lib/wasm32-wasip1"
+    SDK_LIB="${WASI_SDK_PATH:?}/lib/wasm32-wasip1"
     cp "$SYSROOT_LIB/libc.a"                    "$STAGING_LIB"
-    cp "$SYSROOT_LIB/libc++.a"                  "$STAGING_LIB"
-    cp "$SYSROOT_LIB/libc++abi.a"               "$STAGING_LIB"
+    cp "$SDK_LIB/libc++.a"                      "$STAGING_LIB"
+    cp "$SDK_LIB/libc++abi.a"                   "$STAGING_LIB"
     cp "$SYSROOT_LIB/libwasi-emulated-mman.a"   "$STAGING_LIB"
     cp "$SYSROOT_LIB/libwasi-emulated-signal.a" "$STAGING_LIB"
     ;;
