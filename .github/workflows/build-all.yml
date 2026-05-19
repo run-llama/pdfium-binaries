@@ -321,7 +321,7 @@ jobs:
     outputs:
       hashes: ${{ steps.hash.outputs.hashes }}
       tagname: ${{ github.event.inputs.branch }}
-    if: startsWith(github.event.inputs.branch, 'chromium/') && github.event.inputs.version && github.event.inputs.release == 'true'
+    if: ${{ !failure() && !cancelled() && startsWith(github.event.inputs.branch, 'chromium/') && github.event.inputs.version && github.event.inputs.release == 'true' }}
     runs-on: ubuntu-latest
     needs:
       - linux_arm
