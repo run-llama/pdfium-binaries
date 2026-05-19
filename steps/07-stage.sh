@@ -67,15 +67,10 @@ case "$OS-$BUILD_TYPE" in
     # In WASI SDK 24+:
     #   - C libs (libc, wasi-emulated-*) are under $WASI_SYSROOT/lib/wasm32-wasip1/
     #   - C++ libs (libc++, libc++abi) are under $WASI_SDK_PATH/lib/wasm32-wasip1/
-    # Debug: show where the .a files actually live in the WASI SDK
-    echo "=== WASI SDK lib layout ==="
-    find "${WASI_SDK_PATH:?}" -name '*.a' | sort
-    echo "=== end ==="
     SYSROOT_LIB="${WASI_SYSROOT:?}/lib/wasm32-wasip1"
-    SDK_LIB="${WASI_SDK_PATH:?}/lib/wasm32-wasip1"
     cp "$SYSROOT_LIB/libc.a"                    "$STAGING_LIB"
-    cp "$SDK_LIB/libc++.a"                      "$STAGING_LIB"
-    cp "$SDK_LIB/libc++abi.a"                   "$STAGING_LIB"
+    cp "$SYSROOT_LIB/libc++.a"                  "$STAGING_LIB"
+    cp "$SYSROOT_LIB/libc++abi.a"               "$STAGING_LIB"
     cp "$SYSROOT_LIB/libwasi-emulated-mman.a"   "$STAGING_LIB"
     cp "$SYSROOT_LIB/libwasi-emulated-signal.a" "$STAGING_LIB"
     ;;
