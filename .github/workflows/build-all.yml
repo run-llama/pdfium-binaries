@@ -141,9 +141,9 @@ jobs:
       target_cpu: x86
       enable_v8: true
 
-  linux_x86_musl:
+  linux_x64_musl:
     name: Linux x64 MUSL
-    needs: linux_x64_musl
+    needs: linux_x64
     uses: ./.github/workflows/build.yml
     with:
       branch: ${{ github.event.inputs.branch }}
@@ -154,9 +154,10 @@ jobs:
       target_environment: musl
       enable_v8: false
 
-  linux_x86_musl_v8:
-    name: Linux x64 MUSL
-    needs: linux_x64_musl_v8
+  linux_x64_musl_v8:
+    name: Linux x64 MUSL V8
+    if: github.event.inputs.enable_v8 == 'true'
+    needs: linux_x64_v8
     uses: ./.github/workflows/build.yml
     with:
       branch: ${{ github.event.inputs.branch }}
