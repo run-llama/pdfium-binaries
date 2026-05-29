@@ -141,6 +141,32 @@ jobs:
       target_cpu: x86
       enable_v8: true
 
+  linux_x86_musl:
+    name: Linux x64 MUSL
+    needs: linux_x64_musl
+    uses: ./.github/workflows/build.yml
+    with:
+      branch: ${{ github.event.inputs.branch }}
+      version: ${{ github.event.inputs.version }}
+      is_debug: ${{ github.event.inputs.is_debug == 'true' }}
+      target_os: linux
+      target_cpu: x64
+      target_environment: musl
+      enable_v8: false
+
+  linux_x86_musl_v8:
+    name: Linux x64 MUSL
+    needs: linux_x64_musl_v8
+    uses: ./.github/workflows/build.yml
+    with:
+      branch: ${{ github.event.inputs.branch }}
+      version: ${{ github.event.inputs.version }}
+      is_debug: ${{ github.event.inputs.is_debug == 'true' }}
+      target_os: linux
+      target_cpu: x64
+      target_environment: musl
+      enable_v8: true
+
   # NOTE: musl builds are disabled because musl.cc (the cross-compiler
   # toolchain host) is unreachable. Re-enable when a mirror is available
   # or MUSL_URL repo secret is configured.
