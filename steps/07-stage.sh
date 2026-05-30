@@ -73,6 +73,12 @@ case "$OS-$BUILD_TYPE" in
     cp "$SYSROOT_LIB/libc++abi.a"               "$STAGING_LIB"
     cp "$SYSROOT_LIB/libwasi-emulated-mman.a"   "$STAGING_LIB"
     cp "$SYSROOT_LIB/libwasi-emulated-signal.a" "$STAGING_LIB"
+    # libsetjmp defines the `__c_longjmp` wasm exception tag referenced by
+    # any object compiled with `-mllvm -wasm-enable-sjlj` (libjpeg's error
+    # handler, FreeType's sfnt loader). Without it, the link fails with
+    # `undefined symbol: __c_longjmp` once consumers stop passing
+    # `--allow-undefined` to wasm-ld (Rust 1.96+ default).
+    cp "$SYSROOT_LIB/libsetjmp.a"               "$STAGING_LIB"
     ;;
 
   win-shared)
