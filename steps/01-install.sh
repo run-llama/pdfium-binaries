@@ -65,7 +65,29 @@ case "$TARGET_OS" in
           ;;
       esac
 
-      [ -d "$MUSL_VERSION" ] || curl -L "$MUSL_URL/$MUSL_VERSION.tgz" | tar xz
+      if [ ! -d "$MUSL_VERSION" ]; then
+        # musl.cc is frequently unreachable from CI runners; try mirrors with retries.
+        MUSL_MIRRORS=(
+          "https://musl.cc/$MUSL_VERSION.tgz"
+          "https://more.musl.cc/11.2.1/x86_64-linux-musl/$MUSL_VERSION.tgz"
+          "https://more.musl.cc/10/x86_64-linux-musl/$MUSL_VERSION.tgz"
+        )
+        downloaded=0
+        for url in "${MUSL_MIRRORS[@]}"; do
+          echo "Trying $url"
+          if curl -fL --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 5 -o "$MUSL_VERSION.tgz" "$url"; then
+            downloaded=1
+            break
+          fi
+          echo "Download failed from $url, trying next mirror..."
+        done
+        if [ "$downloaded" -ne 1 ]; then
+          echo "Failed to download $MUSL_VERSION from all mirrors" >&2
+          exit 1
+        fi
+        tar xzf "$MUSL_VERSION.tgz"
+        rm -f "$MUSL_VERSION.tgz"
+      fi
       echo "$PWD/$MUSL_VERSION/bin" >> "$PATH_FILE"
 
       sudo apt-get install -y $PACKAGES
