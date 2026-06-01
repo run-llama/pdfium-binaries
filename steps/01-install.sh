@@ -43,28 +43,37 @@ case "$TARGET_OS" in
 
     if [ "$TARGET_ENVIRONMENT" == "musl" ]; then
 
+      # EXPECTED_TOOLPREFIX is what patches/musl/toolchain.gn invokes the
+      # compiler as (e.g. x86_64-linux-musl-gcc). Different mirrors ship
+      # toolchains with different binary prefixes (e.g. musl.cc uses
+      # x86_64-linux-musl-, cross-tools/musl-cross uses x86_64-unknown-linux-musl-),
+      # so we normalize via symlinks below.
       case "$TARGET_CPU" in
         x86)
           MUSL_VERSION="i686-linux-musl-cross"
           MUSL_MIRROR_VERSION="i686-unknown-linux-musl.tar.xz"
+          EXPECTED_TOOLPREFIX="i686-linux-musl"
           PACKAGES="g++ g++-multilib"
           ;;
 
         x64)
           MUSL_VERSION="x86_64-linux-musl-cross"
           MUSL_MIRROR_VERSION="x86_64-unknown-linux-musl.tar.xz"
+          EXPECTED_TOOLPREFIX="x86_64-linux-musl"
           PACKAGES="g++"
           ;;
 
         arm)
           MUSL_VERSION="arm-linux-musleabihf-cross"
           MUSL_MIRROR_VERSION="arm-unknown-linux-musleabihf.tar.xz"
+          EXPECTED_TOOLPREFIX="arm-linux-musleabihf"
           PACKAGES="g++"
           ;;
 
         arm64)
           MUSL_VERSION="aarch64-linux-musl-cross"
           MUSL_MIRROR_VERSION="aarch64-unknown-linux-musl.tar.xz"
+          EXPECTED_TOOLPREFIX="aarch64-linux-musl"
           PACKAGES="g++"
           ;;
       esac
@@ -126,10 +135,71 @@ case "$TARGET_OS" in
           exit 1
         fi
 
-        $extract_cmd "$out_file"
+        # Extract into a fresh staging dir so we can discover the real top
+        # level directory name (it differs between mirrors).
+        rm -rf .musl_extract
+        mkdir -p .musl_extract
+        $extract_cmd "$out_file" -C .musl_extract
         rm -f "$out_file"
+
+        # Locate the toolchain root: the dir that contains a bin/ subdirectory
+        # with a *-gcc binary. We accept any binary prefix here and normalize
+        # below.
+        TOOLCHAIN_GCC=$(find .musl_extract -maxdepth 4 -type f -name '*-gcc' \
+                          -path '*/bin/*' 2>/dev/null | head -n1 || true)
+        if [ -z "$TOOLCHAIN_GCC" ]; then
+          # Some tarballs ship the gcc binary as a symlink instead of a regular
+          # file — broaden the search.
+          TOOLCHAIN_GCC=$(find .musl_extract -maxdepth 4 -name '*-gcc' \
+                            -path '*/bin/*' 2>/dev/null | head -n1 || true)
+        fi
+        if [ -z "$TOOLCHAIN_GCC" ]; then
+          echo "ERROR: could not find a *-gcc binary in the extracted toolchain" >&2
+          find .musl_extract -maxdepth 5 -printf '%p\n' | head -50 >&2 || true
+          exit 1
+        fi
+        TOOLCHAIN_BIN_DIR=$(dirname "$TOOLCHAIN_GCC")
+        TOOLCHAIN_ROOT=$(dirname "$TOOLCHAIN_BIN_DIR")
+        # The actual binary prefix shipped by this mirror (e.g.
+        # "x86_64-linux-musl" from musl.cc, "x86_64-unknown-linux-musl" from
+        # cross-tools/musl-cross).
+        ACTUAL_GCC_NAME=$(basename "$TOOLCHAIN_GCC")
+        ACTUAL_TOOLPREFIX="${ACTUAL_GCC_NAME%-gcc}"
+        echo "Detected musl toolchain at: $TOOLCHAIN_ROOT (toolprefix: $ACTUAL_TOOLPREFIX)"
+
+        # Move the discovered toolchain to the canonical $MUSL_VERSION dir.
+        rm -rf "$MUSL_VERSION"
+        mv "$TOOLCHAIN_ROOT" "$MUSL_VERSION"
+        rm -rf .musl_extract
+
+        # Normalize binary names: if the mirror ships a different toolprefix
+        # than what patches/musl/toolchain.gn expects, create symlinks so
+        # both names resolve.
+        if [ "$ACTUAL_TOOLPREFIX" != "$EXPECTED_TOOLPREFIX" ]; then
+          echo "Creating $EXPECTED_TOOLPREFIX-* symlinks (mirror ships $ACTUAL_TOOLPREFIX-*)"
+          (
+            cd "$MUSL_VERSION/bin"
+            for f in "$ACTUAL_TOOLPREFIX"-*; do
+              [ -e "$f" ] || continue
+              suffix="${f#$ACTUAL_TOOLPREFIX-}"
+              target="$EXPECTED_TOOLPREFIX-$suffix"
+              [ -e "$target" ] || ln -s "$f" "$target"
+            done
+          )
+        fi
+
+        # Sanity check: the binary the build will invoke must exist and be
+        # executable now.
+        if [ ! -x "$MUSL_VERSION/bin/$EXPECTED_TOOLPREFIX-g++" ]; then
+          echo "ERROR: $MUSL_VERSION/bin/$EXPECTED_TOOLPREFIX-g++ not found after install" >&2
+          ls -la "$MUSL_VERSION/bin" >&2 || true
+          exit 1
+        fi
       fi
       echo "$PWD/$MUSL_VERSION/bin" >> "$PATH_FILE"
+      # Also export PATH for the current step so subsequent commands in this
+      # same script (apt-get etc.) can find the toolchain if needed.
+      export PATH="$PWD/$MUSL_VERSION/bin:$PATH"
 
       sudo apt-get install -y $PACKAGES
 
