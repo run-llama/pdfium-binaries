@@ -18,7 +18,10 @@ mkdir -p "$BUILD"
   echo "is_debug = $IS_DEBUG"
   if [ "$IS_DEBUG" != "true" ]; then
     echo "symbol_level = 0"
-    if [ "$OS" != "emscripten" ] && [ "$OS" != "wasi" ]; then
+    # ThinLTO requires lld (LLVM linker), which is only available with clang.
+    # Skip it for: emscripten/wasi (use their own toolchains) and musl
+    # (GCC-based cross toolchain, no lld).
+    if [ "$OS" != "emscripten" ] && [ "$OS" != "wasi" ] && [ "$TARGET_ENVIRONMENT" != "musl" ]; then
       echo "use_thin_lto = true"
     fi
     echo "chrome_pgo_phase = 0"
@@ -118,6 +121,12 @@ mkdir -p "$BUILD"
       echo 'use_custom_libcxx = false'
       echo 'use_custom_libcxx_for_host = false'
       echo 'use_glib = false'
+      # The musl cross toolchain is GCC-based, so lld is not available.
+      # Chromium's build asserts use_lld whenever (Thin)LTO is enabled, and
+      # use_lld defaults to true only with is_clang=true. Disable both LTO
+      # and lld explicitly so the GCC+ld.bfd toolchain is used end-to-end.
+      echo 'use_thin_lto = false'
+      echo 'use_lld = false'
       [ "$ENABLE_V8" == "true" ] && case "$TARGET_CPU" in
         arm)
             echo "v8_snapshot_toolchain = \"//build/toolchain/linux:clang_x86_v8_arm\""
