@@ -141,6 +141,12 @@ case "$TARGET_OS" in
         mkdir -p .musl_extract
         $extract_cmd "$out_file" -C .musl_extract
         rm -f "$out_file"
+        # Some mirror tarballs (notably cross-tools/musl-cross) ship directory
+        # entries with read-only permissions that tar preserves on extraction.
+        # That leaves .musl_extract and/or its children without write access,
+        # which breaks the rename / cleanup below with EACCES. Force write
+        # permission on everything we just extracted before touching it.
+        chmod -R u+w .musl_extract
 
         # Locate the toolchain root: the dir that contains a bin/ subdirectory
         # with a *-gcc binary. We accept any binary prefix here and normalize
