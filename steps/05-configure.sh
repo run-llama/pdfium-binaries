@@ -121,6 +121,12 @@ mkdir -p "$BUILD"
       echo 'use_custom_libcxx = false'
       echo 'use_custom_libcxx_for_host = false'
       echo 'use_glib = false'
+      # The musl cross toolchain ships its own sysroot (with musl libc headers
+      # and libs). Chromium's default Linux sysroot is debian/glibc, which is
+      # incompatible (missing bits/libc-header-start.h, mismatched libc ABI).
+      # Disable use_sysroot so the GCC invocation does not get
+      # --sysroot=.../debian_bullseye_*-sysroot injected.
+      echo 'use_sysroot = false'
       # The musl cross toolchain is GCC-based, so lld is not available.
       # Chromium's build asserts use_lld whenever (Thin)LTO is enabled, and
       # use_lld defaults to true only with is_clang=true. Disable both LTO
