@@ -46,28 +46,46 @@ case "$TARGET_OS" in
       case "$TARGET_CPU" in
         x86)
           MUSL_VERSION="i686-linux-musl-cross"
+          MUSL_MIRROR_VERSION="i686-unknown-linux-musl.tar.xz"
           PACKAGES="g++ g++-multilib"
           ;;
 
         x64)
           MUSL_VERSION="x86_64-linux-musl-cross"
+          MUSL_MIRROR_VERSION="x86_64-unknown-linux-musl.tar.xz"
           PACKAGES="g++"
           ;;
 
         arm)
           MUSL_VERSION="arm-linux-musleabihf-cross"
+          MUSL_MIRROR_VERSION="arm-unknown-linux-musleabihf.tar.xz"
           PACKAGES="g++"
           ;;
 
         arm64)
           MUSL_VERSION="aarch64-linux-musl-cross"
+          MUSL_MIRROR_VERSION="aarch64-unknown-linux-musl.tar.xz"
           PACKAGES="g++"
           ;;
       esac
 
       if [ ! -d "$MUSL_VERSION" ]; then
-        # musl.cc is frequently unreachable from CI runners; try mirrors with retries.
-        MUSL_MIRRORS=(
+        # musl.cc / more.musl.cc are frequently unreachable from Azure-hosted
+        # GitHub Actions runners (outbound to those hosts is blocked / times out).
+        # Prefer GitHub-hosted mirrors first since GitHub.com is always reachable
+        # from GHA runners, then fall back to the canonical musl.cc URLs.
+        #
+        # Allow overriding/extending the mirror list via the MUSL_URL env/secret:
+        #   * If MUSL_URL is set to a full "https://host/path" prefix, the script
+        #     will try "$MUSL_URL/$MUSL_VERSION.tgz" first.
+        MUSL_MIRRORS=()
+        if [ -n "${MUSL_URL:-}" ] && [ "$MUSL_URL" != "https://musl.cc" ]; then
+          MUSL_MIRRORS+=("$MUSL_URL/$MUSL_VERSION.tgz")
+        fi
+        MUSL_MIRRORS+=(
+          # GitHub-hosted mirrors of the musl.cc tarballs (reachable from GHA).
+          "https://github.com/cross-tools/musl-cross/releases/latest/download/${MUSL_MIRROR_VERSION}"
+          # Canonical mirrors (often unreachable from Azure runners, kept as last-resort).
           "https://musl.cc/$MUSL_VERSION.tgz"
           "https://more.musl.cc/11.2.1/x86_64-linux-musl/$MUSL_VERSION.tgz"
           "https://more.musl.cc/10/x86_64-linux-musl/$MUSL_VERSION.tgz"
@@ -75,18 +93,41 @@ case "$TARGET_OS" in
         downloaded=0
         for url in "${MUSL_MIRRORS[@]}"; do
           echo "Trying $url"
-          if curl -fL --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 5 -o "$MUSL_VERSION.tgz" "$url"; then
-            downloaded=1
-            break
+          # Derive output filename from the URL
+          out_file="${url##*/}"
+          if curl -fL --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 5 -o "$out_file" "$url"; then
+            case "$out_file" in
+              *.tar.xz)
+                valid=$(file "$out_file" 2>/dev/null | grep -qi 'XZ\|xz compressed' && echo 1 || echo 0)
+                extract_cmd="tar xJf"
+                ;;
+              *.tgz|*.tar.gz)
+                valid=$([ -s "$out_file" ] && file "$out_file" 2>/dev/null | grep -qi 'gzip' && echo 1 || echo 0)
+                extract_cmd="tar xzf"
+                ;;
+              *)
+                valid=0
+                extract_cmd="tar xf"
+                ;;
+            esac
+            if [ "$valid" -eq 1 ]; then
+              downloaded=1
+              break
+            else
+              echo "Downloaded file from $url is not a valid archive, trying next mirror..."
+              rm -f "$out_file"
+            fi
           fi
           echo "Download failed from $url, trying next mirror..."
         done
+
         if [ "$downloaded" -ne 1 ]; then
           echo "Failed to download $MUSL_VERSION from all mirrors" >&2
           exit 1
         fi
-        tar xzf "$MUSL_VERSION.tgz"
-        rm -f "$MUSL_VERSION.tgz"
+
+        $extract_cmd "$out_file"
+        rm -f "$out_file"
       fi
       echo "$PWD/$MUSL_VERSION/bin" >> "$PATH_FILE"
 
