@@ -72,13 +72,6 @@ diff --git a/fpdfsdk/fpdf_edittext.cpp b/fpdfsdk/fpdf_edittext.cpp
 index 11925926a..a0239ca87 100644
 --- a/fpdfsdk/fpdf_edittext.cpp
 +++ b/fpdfsdk/fpdf_edittext.cpp
-@@ -38,5 +38,6 @@
- #include "core/fxcrt/span_util.h"
- #include "core/fxcrt/stl_util.h"
- #include "core/fxcrt/utf16.h"
-+#include "core/fxge/cfx_face.h"
- #include "fpdfsdk/cpdfsdk_helpers.h"
- #include "public/fpdf_edit.h"
 @@ -723,6 +723,34 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font) {
    return pFont->GetFontFlags() & 0x7ffff;
  }
