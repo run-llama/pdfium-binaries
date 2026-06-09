@@ -116,6 +116,23 @@ mkdir -p "$BUILD"
 
   case "$TARGET_ENVIRONMENT" in
     musl)
+      # Resolve the absolute bin/ dir for the musl cross toolchain installed
+      # by steps/01-install.sh. Required because chromium's gcc_toolchain.gni
+      # now lists the archiver as a build input, so bare names like
+      # "x86_64-linux-musl-ar" get resolved against root_out_dir (where they
+      # don't exist) instead of $PATH.
+      case "$TARGET_CPU" in
+        x86)   MUSL_VERSION="i686-linux-musl-cross" ;;
+        x64)   MUSL_VERSION="x86_64-linux-musl-cross" ;;
+        arm)   MUSL_VERSION="arm-linux-musleabihf-cross" ;;
+        arm64) MUSL_VERSION="aarch64-linux-musl-cross" ;;
+      esac
+      MUSL_TOOLCHAIN_BIN="$PWD/$MUSL_VERSION/bin"
+      if [ ! -d "$MUSL_TOOLCHAIN_BIN" ]; then
+        echo "ERROR: musl toolchain bin dir not found at $MUSL_TOOLCHAIN_BIN" >&2
+        exit 1
+      fi
+      echo "musl_toolchain_bin = \"$MUSL_TOOLCHAIN_BIN\""
       echo 'is_musl = true'
       echo 'is_clang = false'
       echo 'use_custom_libcxx = false'

@@ -1,7 +1,17 @@
 import("//build/toolchain/gcc_toolchain.gni")
 
+declare_args() {
+  # Absolute path to the musl cross-toolchain "bin" directory (the one
+  # containing `<prefix>-gcc` etc.). Required because recent chromium
+  # build/ versions list `ar` as an input to alink() and resolve bare
+  # names relative to root_out_dir instead of $PATH.
+  musl_toolchain_bin = ""
+}
+assert(musl_toolchain_bin != "",
+       "musl_toolchain_bin must be set in args.gn for musl builds")
+
 gcc_toolchain("x86") {
-  toolprefix = "i686-linux-musl-"
+  toolprefix = "${musl_toolchain_bin}/i686-linux-musl-"
 
   cc = "${toolprefix}gcc"
   cxx = "${toolprefix}g++"
@@ -23,7 +33,7 @@ gcc_toolchain("x86") {
 }
 
 gcc_toolchain("x64") {
-  toolprefix = "x86_64-linux-musl-"
+  toolprefix = "${musl_toolchain_bin}/x86_64-linux-musl-"
 
   cc = "${toolprefix}gcc"
   cxx = "${toolprefix}g++"
@@ -45,7 +55,7 @@ gcc_toolchain("x64") {
 }
 
 gcc_toolchain("arm") {
-  toolprefix = "arm-linux-musleabihf-"
+  toolprefix = "${musl_toolchain_bin}/arm-linux-musleabihf-"
 
   cc = "${toolprefix}gcc"
   cxx = "${toolprefix}g++"
@@ -67,7 +77,7 @@ gcc_toolchain("arm") {
 }
 
 gcc_toolchain("arm64") {
-  toolprefix = "aarch64-linux-musl-"
+  toolprefix = "${musl_toolchain_bin}/aarch64-linux-musl-"
 
   cc = "${toolprefix}gcc"
   cxx = "${toolprefix}g++"
