@@ -72,6 +72,13 @@ diff --git a/fpdfsdk/fpdf_edittext.cpp b/fpdfsdk/fpdf_edittext.cpp
 index 11925926a..a0239ca87 100644
 --- a/fpdfsdk/fpdf_edittext.cpp
 +++ b/fpdfsdk/fpdf_edittext.cpp
+@@ -38,5 +38,6 @@
+ #include "core/fxcrt/span_util.h"
+ #include "core/fxcrt/stl_util.h"
+ #include "core/fxcrt/utf16.h"
++#include "core/fxge/cfx_face.h"
+ #include "fpdfsdk/cpdfsdk_helpers.h"
+ #include "public/fpdf_edit.h"
 @@ -723,6 +723,34 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font) {
    return pFont->GetFontFlags() & 0x7ffff;
  }
@@ -134,7 +141,7 @@ index 11925926a..a0239ca87 100644
  FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV
  FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
    auto* pFont = CPDFFontFromFPDFFont(font);
-@@ -825,6 +873,42 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
+@@ -825,6 +873,168 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
    return FPDFGlyphPathFromCFXPath(pPath);
  }
  
@@ -172,6 +179,132 @@ index 11925926a..a0239ca87 100644
 +      pCfxFont->LoadGlyphPath(pos[0].glyph_index_, pos[0].font_char_width_);
 +
 +  return FPDFGlyphPathFromCFXPath(pPath);
++}
++
++FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_HasToUnicode(FPDF_FONT font) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont) {
++    return 0;
++  }
++  RetainPtr<const CPDF_Dictionary> dict = pFont->GetFontDict();
++  return (dict && dict->KeyExist("ToUnicode")) ? 1 : 0;
++}
++
++FPDF_EXPORT unsigned long FPDF_CALLCONV
++FPDFFont_GetCharGlyphName(FPDF_FONT font,
++                          uint32_t char_code,
++                          char* buffer,
++                          unsigned long length) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont) {
++    return 0;
++  }
++
++  ByteString glyph_name;
++
++  // Prefer the PDF-assigned name from /Encoding /Differences (simple fonts)
++  // over FreeType's built-in name — PDFs commonly remap charcodes here.
++  RetainPtr<const CPDF_Dictionary> font_dict = pFont->GetFontDict();
++  if (font_dict) {
++    RetainPtr<const CPDF_Dictionary> enc_dict =
++        font_dict->GetDictFor("Encoding");
++    if (enc_dict) {
++      RetainPtr<const CPDF_Array> diffs =
++          enc_dict->GetArrayFor("Differences");
++      if (diffs) {
++        uint32_t cur = 0;
++        for (size_t i = 0; i < diffs->size(); ++i) {
++          RetainPtr<const CPDF_Object> obj = diffs->GetDirectObjectAt(i);
++          if (!obj) {
++            continue;
++          }
++          if (obj->IsNumber()) {
++            cur = obj->GetInteger();
++          } else if (obj->IsName()) {
++            if (cur == char_code) {
++              glyph_name = obj->GetString();
++              break;
++            }
++            cur++;
++          }
++        }
++      }
++    }
++  }
++
++  if (glyph_name.IsEmpty()) {
++    int glyph_index = pFont->GlyphFromCharCode(char_code, nullptr);
++    if (glyph_index > 0) {
++      CFX_Font* cfx_font = pFont->GetFont();
++      if (cfx_font) {
++        RetainPtr<CFX_Face> face = cfx_font->GetFace();
++        if (face) {
++          glyph_name = face->GetGlyphName(glyph_index);
++        }
++      }
++    }
++  }
++
++  if (glyph_name.IsEmpty()) {
++    return 0;
++  }
++
++  const unsigned long needed =
++      static_cast<unsigned long>(glyph_name.GetLength()) + 1;
++  if (buffer && length >= needed) {
++    memcpy(buffer, glyph_name.c_str(), needed);
++  }
++  return needed;
++}
++
++FPDF_EXPORT unsigned long FPDF_CALLCONV
++FPDFFont_GetEncoding(FPDF_FONT font, char* buffer, unsigned long length) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont) {
++    return 0;
++  }
++  RetainPtr<const CPDF_Dictionary> font_dict = pFont->GetFontDict();
++  if (!font_dict) {
++    return 0;
++  }
++
++  ByteString enc_name;
++  RetainPtr<const CPDF_Object> enc_obj =
++      font_dict->GetDirectObjectFor("Encoding");
++  if (enc_obj) {
++    if (enc_obj->IsName()) {
++      enc_name = enc_obj->GetString();
++    } else if (enc_obj->IsDictionary()) {
++      const CPDF_Dictionary* enc_d = enc_obj->AsDictionary();
++      RetainPtr<const CPDF_Object> base =
++          enc_d->GetDirectObjectFor("BaseEncoding");
++      if (base && base->IsName()) {
++        enc_name = base->GetString();
++      } else {
++        enc_name = "Custom";
++      }
++    }
++  }
++
++  if (enc_name.IsEmpty()) {
++    return 0;
++  }
++
++  const unsigned long needed =
++      static_cast<unsigned long>(enc_name.GetLength()) + 1;
++  if (buffer && length >= needed) {
++    memcpy(buffer, enc_name.c_str(), needed);
++  }
++  return needed;
++}
++
++FPDF_EXPORT int FPDF_CALLCONV
++FPDFFont_GetCharGlyphIndex(FPDF_FONT font, uint32_t char_code) {
++  auto* pFont = CPDFFontFromFPDFFont(font);
++  if (!pFont) {
++    return -1;
++  }
++  return pFont->GlyphFromCharCode(char_code, nullptr);
 +}
 +
  FPDF_EXPORT int FPDF_CALLCONV
@@ -312,7 +445,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Experimental API.
  // Get the glyphpath describing how to draw a font glyph.
  //
-@@ -1634,6 +1676,19 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
+@@ -1634,6 +1676,78 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
                                                                 uint32_t glyph,
                                                                 float font_size);
  
@@ -328,6 +461,65 @@ index 0f3c4c5e9..0cfd40c80 100644
 +FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPathFromCharCode(FPDF_FONT font,
 +                                                               uint32_t char_code,
 +                                                               float font_size);
++
++// LlamaParse API.
++// Report whether |font|'s font dictionary defines a /ToUnicode CMap. When this
++// returns 0 the unicode values produced by FPDFText_GetUnicode for any char in
++// this font are derived from the font's encoding alone and may be garbage for
++// fonts using a custom or Identity encoding.
++//
++// font - the handle to the font object.
++//
++// Returns 1 if /ToUnicode is present, 0 otherwise (including on invalid font).
++FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_HasToUnicode(FPDF_FONT font);
++
++// LlamaParse API.
++// Get the PostScript glyph name that |font| assigns to |char_code|.
++// Searches /Encoding /Differences first (the PDF-assigned override for simple
++// fonts), then falls back to the embedded font program's glyph name table via
++// FreeType. The name (e.g. "A", "uni0041", "g42") can be resolved against the
++// Adobe Glyph List to recover unicode when /ToUnicode is missing.
++//
++// font      - the handle to the font object.
++// char_code - the char code as it appears in the PDF content stream.
++// buffer    - buffer to receive the NUL-terminated name; may be NULL to query.
++// length    - size of |buffer| in bytes.
++//
++// Returns the number of bytes required (including the terminator), or 0 on
++// failure. If the buffer is too small, no bytes are written.
++FPDF_EXPORT unsigned long FPDF_CALLCONV
++FPDFFont_GetCharGlyphName(FPDF_FONT font,
++                          uint32_t char_code,
++                          char* buffer,
++                          unsigned long length);
++
++// LlamaParse API.
++// Get the encoding name of |font|. Returns the /Encoding name directly (e.g.
++// "Identity-H", "WinAnsiEncoding") when the font dictionary's /Encoding entry
++// is a name, the /BaseEncoding name when /Encoding is a dictionary that
++// defines one, or the literal string "Custom" when /Encoding is a dictionary
++// without a /BaseEncoding (typical of font-private encodings).
++//
++// font   - the handle to the font object.
++// buffer - buffer to receive the NUL-terminated name; may be NULL to query.
++// length - size of |buffer| in bytes.
++//
++// Returns the number of bytes required (including the terminator), or 0 on
++// failure. If the buffer is too small, no bytes are written.
++FPDF_EXPORT unsigned long FPDF_CALLCONV
++FPDFFont_GetEncoding(FPDF_FONT font, char* buffer, unsigned long length);
++
++// LlamaParse API.
++// Get the glyph index in |font|'s embedded font program for |char_code|.
++// Pair with FPDFFont_GetGlyphPath to render individual glyphs (e.g. for a
++// per-glyph OCR fallback when glyph names are unavailable).
++//
++// font      - the handle to the font object.
++// char_code - the char code as it appears in the PDF content stream.
++//
++// Returns the glyph index (>= 0), or -1 on invalid font.
++FPDF_EXPORT int FPDF_CALLCONV
++FPDFFont_GetCharGlyphIndex(FPDF_FONT font, uint32_t char_code);
 +
  // Experimental API.
  // Get number of segments inside glyphpath.
