@@ -168,10 +168,6 @@ jobs:
       target_environment: musl
       enable_v8: true
 
-  # NOTE: musl builds are disabled because musl.cc (the cross-compiler
-  # toolchain host) is unreachable. Re-enable when a mirror is available
-  # or MUSL_URL repo secret is configured.
-
   # ── macOS ──────────────────────────────────────────────
 
   mac_arm64:
@@ -360,6 +356,8 @@ jobs:
       - linux_x64_v8
       - linux_x86
       - linux_x86_v8
+      - linux_x64_musl
+      - linux_x64_musl_v8
       - mac_arm64
       - mac_arm64_v8
       - mac_x64
