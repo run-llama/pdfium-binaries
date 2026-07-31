@@ -1,0 +1,16 @@
+--- a/core/fxge/cfx_renderdevice.h
++++ b/core/fxge/cfx_renderdevice.h
+@@ -19,6 +19,13 @@
+ #include "core/fxge/dib/fx_dib.h"
+ #include "core/fxge/renderdevicedriver_iface.h"
+ 
++#if BUILDFLAG(IS_WIN)
++// For HDC, used by CreateForWindowsDC() below. Nothing else in this header's
++// include chain pulls in <windows.h>, so translation units that include only
++// this header (e.g. core/fxge/cfx_drawutils.cpp) fail to compile without it.
++#include "core/fxcrt/fx_system.h"
++#endif
++
+ class CFX_DIBBase;
+ class CFX_DIBitmap;
+ class CFX_Font;
