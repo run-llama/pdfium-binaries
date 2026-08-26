@@ -22,6 +22,51 @@ index 629c9d927..fee827eac 100644
  
   private:
    enum class CIDFontType : bool {
+diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
+--- a/core/fpdftext/cpdf_textpage.cpp
++++ b/core/fpdftext/cpdf_textpage.cpp
+@@ -819,19 +819,33 @@
+   }
+ 
+   WideString str = temp_text_buf_.MakeString();
++  // LlamaParse change.
++  // Collapse runs of consecutive spaces in a single compaction pass. The
++  // previous delete-in-place loop performed three O(n) removals (string,
++  // char list, and byte buffer) per collapsed space, which is O(n^2) on
++  // pages whose temp line is large and space-heavy (e.g. sparse tables that
++  // generate many gap spaces) and could take minutes of memmove. Only `str`
++  // and `temp_char_list_` must stay in sync for the bidi pass below;
++  // `temp_text_buf_` is cleared wholesale at the end of this function, so
++  // deleting from it per-space was pure waste.
++  size_t write_pos = 0;
+   bool prev_char_is_space = false;
+   for (size_t i = 0; i < str.GetLength(); ++i) {
+-    if (str[i] != ' ') {
+-      prev_char_is_space = false;
++    const bool is_space = str[i] == ' ';
++    if (is_space && prev_char_is_space) {
+       continue;
+     }
+-    if (prev_char_is_space) {
+-      temp_text_buf_.Delete(i, 1);
+-      temp_char_list_.erase(temp_char_list_.begin() + i);
+-      str.Delete(i);
+-      --i;
++    if (write_pos != i) {
++      str.SetAt(write_pos, str[i]);
++      temp_char_list_[write_pos] = temp_char_list_[i];
+     }
+-    prev_char_is_space = true;
++    prev_char_is_space = is_space;
++    ++write_pos;
++  }
++  if (write_pos != str.GetLength()) {
++    str.Delete(write_pos, str.GetLength() - write_pos);
++    temp_char_list_.erase(temp_char_list_.begin() + write_pos,
++                          temp_char_list_.end());
+   }
+   CFX_BidiString bidi(str, /*auto_order=*/false);
+   if (rtl_) {
 diff --git a/core/fpdfdoc/cpdf_structelement.cpp b/core/fpdfdoc/cpdf_structelement.cpp
 index 4448a02ff..0a162ac52 100644
 --- a/core/fpdfdoc/cpdf_structelement.cpp
