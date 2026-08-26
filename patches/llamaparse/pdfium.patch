@@ -68,6 +68,31 @@ index 956c24c42..e1cd789ee 100644
 +
 +  return pAnnotDict->GetObjNum();
 +}
+diff --git a/fpdfsdk/fpdf_editpage.cpp b/fpdfsdk/fpdf_editpage.cpp
+--- a/fpdfsdk/fpdf_editpage.cpp
++++ b/fpdfsdk/fpdf_editpage.cpp
+@@ -274,6 +274,21 @@
+   return IsPageObject(pPage) ? pPage->GetPageRotation() : -1;
+ }
+ 
++FPDF_EXPORT float FPDF_CALLCONV FPDFPage_GetUserUnit(FPDF_PAGE page) {
++  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
++  if (!IsPageObject(pPage)) {
++    return 1.0f;
++  }
++  RetainPtr<const CPDF_Dictionary> dict = pPage->GetDict();
++  if (!dict) {
++    return 1.0f;
++  }
++  // 0.0 is GetFloatFor's absent-key value, and values below 1.0 are invalid
++  // per ISO 32000-1 table 30; both collapse to the 1.0 default.
++  float user_unit = dict->GetFloatFor("UserUnit");
++  return user_unit < 1.0f ? 1.0f : user_unit;
++}
++
+ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+ FPDFPage_InsertObject(FPDF_PAGE page, FPDF_PAGEOBJECT page_object) {
+   CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
 diff --git a/fpdfsdk/fpdf_edittext.cpp b/fpdfsdk/fpdf_edittext.cpp
 index 11925926a..a0239ca87 100644
 --- a/fpdfsdk/fpdf_edittext.cpp
@@ -104,7 +129,7 @@ index 11925926a..a0239ca87 100644
 +  return FPDF_FONTTYPE_UNKNOWN;
 +}
 +
- FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetWeight(FPDF_FONT font) {
+ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetWeight(FPDF_FONT font) {
    auto* cfont = CPDFFontFromFPDFFont(font);
    if (!cfont) {
 @@ -788,6 +816,26 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
@@ -398,7 +423,27 @@ index 0f3c4c5e9..0cfd40c80 100644
  typedef struct FPDF_IMAGEOBJ_METADATA {
    // The image width in pixels.
    unsigned int width;
-@@ -1553,6 +1569,14 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font);
+@@ -171,6 +187,19 @@
+ // Or returns -1 on error.
+ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetRotation(FPDF_PAGE page);
+ 
++// LlamaParse API.
++// Get the /UserUnit value of |page| — the size of one page-space unit in
++// multiples of 1/72 inch (ISO 32000-1 table 30). PDFium ignores this key
++// everywhere else and reports page and glyph geometry in raw units, so
++// callers must multiply reported geometry by this value to recover physical
++// dimensions on pages that declare it.
++//
++//   page - handle to a page
++//
++// Returns the user unit, or 1.0 when the key is absent, invalid (values
++// below 1.0 are not permitted), or on error.
++FPDF_EXPORT float FPDF_CALLCONV FPDFPage_GetUserUnit(FPDF_PAGE page);
++
+ // Set rotation for |page|.
+ //
+ //   page   - handle to a page.
+@@ -1553,6 +1582,14 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font);
  // defined in ISO 32000-1:2008, table 123, -1 on failure.
  FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font);
  
@@ -413,7 +458,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Experimental API.
  // Get the font weight of a font.
  //
-@@ -1622,6 +1646,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+@@ -1622,6 +1659,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
                                                             float font_size,
                                                             float* width);
  
@@ -438,7 +483,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Experimental API.
  // Get the glyphpath describing how to draw a font glyph.
  //
-@@ -1634,6 +1676,78 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
+@@ -1634,6 +1689,78 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
                                                                 uint32_t glyph,
                                                                 float font_size);
  
@@ -570,3 +615,4 @@ index fe96ccd5b..2bedfd25e 100644
  // Experimental API.
  // Function: FPDFText_GetTextObject
  //          Get the FPDF_PAGEOBJECT associated with a given character.
+ 
