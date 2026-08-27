@@ -25,7 +25,23 @@ index 629c9d927..fee827eac 100644
 diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
 --- a/core/fpdftext/cpdf_textpage.cpp
 +++ b/core/fpdftext/cpdf_textpage.cpp
-@@ -819,19 +819,33 @@
+@@ -400,6 +400,15 @@
+       }
+     }
+   }
++
++  // LlamaParse change.
++  // Init is done growing. The temp accumulation list is empty but can retain
++  // hundreds of MB of capacity after a dense page, and `char_list_` can carry
++  // up to 2x geometric-growth slack; both would otherwise persist for the
++  // textpage's whole lifetime. Release them now.
++  temp_char_list_.shrink_to_fit();
++  char_list_.shrink_to_fit();
++  char_indices_.shrink_to_fit();
+ }
+ 
+ int CPDF_TextPage::CountChars() const {
+@@ -819,19 +828,46 @@
    }
  
    WideString str = temp_text_buf_.MakeString();
@@ -64,6 +80,19 @@ diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
 +    str.Delete(write_pos, str.GetLength() - write_pos);
 +    temp_char_list_.erase(temp_char_list_.begin() + write_pos,
 +                          temp_char_list_.end());
++  }
++  // LlamaParse change.
++  // The bidi loop below appends every temp char into `char_list_`. On dense
++  // pages a single temp line can hold millions of CharInfos (~88 bytes each);
++  // letting push_back grow the vector geometrically overshoots the final
++  // size by up to 2x, wasting hundreds of MB. Reserve the exact target when
++  // the incoming batch at least doubles the list — that condition keeps the
++  // amortized-linear growth guarantee (each triggering reserve at least
++  // doubles capacity), while small line-by-line appends keep the default
++  // geometric growth.
++  if (temp_char_list_.size() >= char_list_.size() &&
++      char_list_.size() + temp_char_list_.size() > char_list_.capacity()) {
++    char_list_.reserve(char_list_.size() + temp_char_list_.size());
    }
    CFX_BidiString bidi(str, /*auto_order=*/false);
    if (rtl_) {
@@ -397,13 +426,14 @@ index 96455e726..d1ca4573d 100644
  FPDF_StructElement_GetParent(FPDF_STRUCTELEMENT struct_element) {
    CPDF_StructElement* elem =
 diff --git a/fpdfsdk/fpdf_text.cpp b/fpdfsdk/fpdf_text.cpp
-index 960b2aefc..cf18d618a 100644
 --- a/fpdfsdk/fpdf_text.cpp
 +++ b/fpdfsdk/fpdf_text.cpp
-@@ -76,6 +76,21 @@ FPDFText_GetUnicode(FPDF_TEXTPAGE text_page, int index) {
-   return charinfo.unicode();
- }
+@@ -74,6 +74,60 @@
  
+   const CPDF_TextPage::CharInfo& charinfo = textpage->GetCharInfo(index);
+   return charinfo.unicode();
++}
++
 +FPDF_EXPORT unsigned int FPDF_CALLCONV
 +FPDFText_GetCharCode(FPDF_TEXTPAGE text_page, int index) {
 +  CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, index);
@@ -419,9 +449,46 @@ index 960b2aefc..cf18d618a 100644
 +  return char_code;
 +}
 +
++FPDF_EXPORT int FPDF_CALLCONV
++FPDFText_GetCharInfoBatch(FPDF_TEXTPAGE text_page,
++                          int start_index,
++                          int count,
++                          FPDF_CHARINFO_LP* buffer) {
++  if (!buffer || count <= 0) {
++    return -1;
++  }
++  CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, start_index);
++  if (!textpage) {
++    return -1;
++  }
++  const int64_t total = textpage->CountChars();
++  const int64_t end =
++      std::min(static_cast<int64_t>(start_index) + count, total);
++  int written = 0;
++  for (int64_t i = start_index; i < end; ++i) {
++    const CPDF_TextPage::CharInfo& charinfo = textpage->GetCharInfo(i);
++    FPDF_CHARINFO_LP* out = &buffer[written++];
++    out->text_object = FPDFPageObjectFromCPDFPageObject(
++        const_cast<CPDF_TextObject*>(charinfo.text_object()));
++    out->left = charinfo.char_box().left;
++    out->right = charinfo.char_box().right;
++    out->bottom = charinfo.char_box().bottom;
++    out->top = charinfo.char_box().top;
++    out->loose_box = FSRectFFromCFXFloatRect(charinfo.loose_char_box());
++    out->font_size = textpage->GetCharFontSize(i);
++    out->unicode = charinfo.unicode();
++    unsigned int batch_char_code = charinfo.char_code();
++    out->char_code =
++        batch_char_code == CPDF_Font::kInvalidCharCode ? 0 : batch_char_code;
++    out->char_type = static_cast<int>(charinfo.char_type());
++    const CPDF_TextObject* text_object = charinfo.text_object();
++    out->text_render_mode =
++        text_object ? static_cast<int>(text_object->GetTextRenderMode()) : -1;
++  }
++  return written;
+ }
+ 
  FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
- FPDFText_GetTextObject(FPDF_TEXTPAGE text_page, int index) {
-   CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, index);
 diff --git a/public/fpdf_annot.h b/public/fpdf_annot.h
 index 0aa9f6886..45cec5103 100644
 --- a/public/fpdf_annot.h
@@ -637,10 +704,9 @@ index c9823a634..b81aa4925 100644
  // Function: FPDF_StructElement_GetParent
  //          Get the parent of the structure element.
 diff --git a/public/fpdf_text.h b/public/fpdf_text.h
-index fe96ccd5b..2bedfd25e 100644
 --- a/public/fpdf_text.h
 +++ b/public/fpdf_text.h
-@@ -74,6 +74,19 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFText_CountChars(FPDF_TEXTPAGE text_page);
+@@ -74,6 +74,69 @@
  FPDF_EXPORT unsigned int FPDF_CALLCONV
  FPDFText_GetUnicode(FPDF_TEXTPAGE text_page, int index);
  
@@ -657,7 +723,56 @@ index fe96ccd5b..2bedfd25e 100644
 +FPDF_EXPORT unsigned int FPDF_CALLCONV
 +FPDFText_GetCharCode(FPDF_TEXTPAGE text_page, int index);
 +
++// LlamaParse API.
++// Packed per-character record filled by FPDFText_GetCharInfoBatch. Field
++// values match the corresponding single-character getters:
++//   text_object      - FPDFText_GetTextObject (may be NULL)
++//   left/right/
++//   bottom/top       - FPDFText_GetCharBox (page space)
++//   loose_box        - FPDFText_GetLooseCharBox
++//   font_size        - FPDFText_GetFontSize
++//   unicode          - FPDFText_GetUnicode
++//   char_code        - FPDFText_GetCharCode
++//   char_type        - raw CPDF_TextPage::CharType value: 0 = normal,
++//                      1 = generated, 2 = no-unicode-mapping (see
++//                      FPDFText_HasUnicodeMapError), 3 = hyphen,
++//                      4 = piece, 5 = actual-text
++//   text_render_mode - FPDFTextObj_GetTextRenderMode of the char's text
++//                      object, or -1 when there is none
++typedef struct FPDF_CHARINFO_LP_ {
++  FPDF_PAGEOBJECT text_object;
++  double left;
++  double right;
++  double bottom;
++  double top;
++  FS_RECTF loose_box;
++  float font_size;
++  unsigned int unicode;
++  unsigned int char_code;
++  int char_type;
++  int text_render_mode;
++} FPDF_CHARINFO_LP;
++
++// LlamaParse API.
++// Function: FPDFText_GetCharInfoBatch
++//          Fill |buffer| with per-character info for |count| characters
++//          starting at |start_index|, replacing one FFI round-trip per field
++//          per character with a single call.
++// Parameters:
++//          text_page   -   Handle to a text page information structure.
++//                          Returned by FPDFText_LoadPage function.
++//          start_index -   Zero-based index of the first character.
++//          count       -   Number of characters to read.
++//          buffer      -   Caller-allocated array of at least |count| records.
++// Return value:
++//          Number of records written (may be less than |count| when the range
++//          runs past the last character), or -1 on invalid arguments.
++FPDF_EXPORT int FPDF_CALLCONV
++FPDFText_GetCharInfoBatch(FPDF_TEXTPAGE text_page,
++                          int start_index,
++                          int count,
++                          FPDF_CHARINFO_LP* buffer);
++
  // Experimental API.
  // Function: FPDFText_GetTextObject
  //          Get the FPDF_PAGEOBJECT associated with a given character.
- 

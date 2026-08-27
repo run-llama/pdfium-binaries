@@ -6,8 +6,14 @@ All additional patches live in `patches/llamaparse/`. The patches expose functio
 - Font type detection (`FPDFFont_GetType`)
 - Charcode-based glyph width and path retrieval (`FPDFFont_GetGlyphWidthFromCharCode`, `FPDFFont_GetGlyphPathFromCharCode`)
 - Original character code access (`FPDFText_GetCharCode`)
+- Batched per-character info retrieval (`FPDFText_GetCharInfoBatch`) — one call fills unicode, char code, char type, render mode, font size, and strict/loose char boxes for a whole index range, replacing several FFI round-trips per character
 - Annotation object numbers (`FPDFAnnot_GetObjNum`)
 - Structure element child object numbers (`FPDF_StructElement_GetChildObjNum`)
+
+The patches also trim `CPDF_TextPage` memory: the temp char-list capacity is
+released and `char_list_` growth slack is reserved/shrunk away, which cuts
+peak and steady-state textpage memory by roughly half on dense pages
+(millions of characters).
 
 ## Download
 
