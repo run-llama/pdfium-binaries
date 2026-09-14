@@ -57,9 +57,21 @@ verify_allocator_exports() {
   case "$OS" in
     linux|android) exports=$("$tools/llvm-nm" -D --defined-only "$lib" | awk '{print $3}') ;;
     mac|ios) exports=$("$tools/llvm-nm" -gU "$lib" | awk '{print $3}') ;;
-    win) exports=$("$tools/llvm-readobj" --coff-exports "$lib" | awk '/Name:/{print $2}') ;;
+    win)
+      # The Windows LLVM package ships no llvm-readobj; read the PE export
+      # table directly (stdlib python, see steps/pe_exports.py).
+      local py
+      py=$(command -v python3 || command -v python)
+      exports=$("$py" "$(dirname "${BASH_SOURCE[0]}")/pe_exports.py" "$lib")
+      ;;
     *) return 0 ;;
   esac
+  # Self-check: a gate that read nothing must fail, not pass. Every PDFium
+  # build exports FPDF_InitLibrary.
+  if ! printf '%s\n' "$exports" | grep -qE '^_?FPDF_InitLibrary$'; then
+    echo "ERROR: could not read the export table of $lib (FPDF_InitLibrary missing)" >&2
+    exit 1
+  fi
   local leaked
   leaked=$(printf '%s\n' "$exports" | grep -E '^_{0,2}(mi_|Zn|Zd|malloc$|free$|calloc$|realloc$|posix_memalign$|aligned_alloc$)' || true)
   if [ -n "$leaked" ]; then
