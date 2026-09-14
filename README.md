@@ -20,7 +20,7 @@ On linux, mac and win the build also routes PDFium's own allocation funnels
 (fxcrt's `FX_Alloc` family and the module's global C++ `operator new`/`delete`)
 through a vendored [mimalloc](https://github.com/microsoft/mimalloc) v3.1.5
 (`third_party/mimalloc/`, GN arg `pdf_use_mimalloc`, default set per OS in
-`steps/05-configure.sh`; `PDFium_USE_MIMALLOC=false` builds without it). This is
+`steps/05-configure.sh`, 64-bit targets only; `PDFium_USE_MIMALLOC=false` builds without it). This is
 not a malloc override: libc `malloc` is untouched, nothing allocator-related is
 exported, and the host process keeps its own allocator. `steps/07-stage.sh` fails
 the build if any allocator symbol leaks into the export table. Measured on
