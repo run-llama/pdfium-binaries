@@ -44,6 +44,18 @@ mkdir -p "$BUILD"
     echo "pdf_is_complete_lib = true"
   fi
 
+  # llamaparse: PDFium's allocation funnels go through vendored mimalloc on
+  # the platforms we ship to. PDFium_USE_MIMALLOC=true|false overrides the
+  # per-OS default (A/B builds, bisecting).
+  USE_MIMALLOC=${PDFium_USE_MIMALLOC:-auto}
+  if [ "$USE_MIMALLOC" == "auto" ]; then
+    case "$OS" in
+      linux|mac|win) USE_MIMALLOC=true ;;
+      *) USE_MIMALLOC=false ;;
+    esac
+  fi
+  echo "pdf_use_mimalloc = $USE_MIMALLOC"
+
   case "$OS" in
     android)
       echo "clang_use_chrome_plugins = false"

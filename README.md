@@ -10,6 +10,23 @@ All additional patches live in `patches/llamaparse/`. The patches expose functio
 - Annotation object numbers (`FPDFAnnot_GetObjNum`)
 - Structure element child object numbers (`FPDF_StructElement_GetChildObjNum`)
 
+The patches also speed up text extraction without changing its output: CID
+font widths are flattened into a per-CID table, `ToUnicode` lookups and the
+per-font space charcode are memoized, `Tf` font resolution is cached per
+content parser, and bidi segmentation short-circuits strings with no
+right-to-left code points.
+
+On linux, mac and win the build also routes PDFium's own allocation funnels
+(fxcrt's `FX_Alloc` family and the module's global C++ `operator new`/`delete`)
+through a vendored [mimalloc](https://github.com/microsoft/mimalloc) v3.1.5
+(`third_party/mimalloc/`, GN arg `pdf_use_mimalloc`, default set per OS in
+`steps/05-configure.sh`; `PDFium_USE_MIMALLOC=false` builds without it). This is
+not a malloc override: libc `malloc` is untouched, nothing allocator-related is
+exported, and the host process keeps its own allocator. `steps/07-stage.sh` fails
+the build if any allocator symbol leaks into the export table. Measured on
+multi-page text extraction: ~10-15% on top of the parser changes above, ~20-25%
+combined, with byte-identical output.
+
 The patches also trim `CPDF_TextPage` memory: the temp char-list capacity is
 released and `char_list_` growth slack is reserved/shrunk away, which cuts
 peak and steady-state textpage memory by roughly half on dense pages
@@ -130,6 +147,9 @@ See the [Releases page](https://github.com/run-llama/pdfium-binaries/releases) t
    ```
    git diff origin/main > <path-to-pdfium-binaries>/patches/llamaparse/pdfium.patch
    ```
+   New files must be registered first (`git add -N <file>`) or `git diff` will
+   not include them. `third_party/mimalloc` is copied in by `steps/03-patch.sh`,
+   not patched, so leave it out of the diff.
 5. Commit and push your new patch in this repository
    - If your patch is large enough to warrant its own patch file, you will also need to add a corresponding `apply_patch` call in `steps/03-patch.sh`
 
