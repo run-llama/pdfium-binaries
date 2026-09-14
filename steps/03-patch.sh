@@ -1,6 +1,7 @@
 #!/bin/bash -eux
 
 PATCHES="$PWD/patches"
+THIRD_PARTY="$PWD/third_party"
 SOURCE="${PDFium_SOURCE_DIR:-pdfium}"
 OS="${PDFium_TARGET_OS:?}"
 TARGET_CPU="${PDFium_TARGET_CPU:?}"
@@ -18,6 +19,11 @@ pushd "${SOURCE}"
 
 # apply llamaparse source changes prior to platform build patches
 apply_patch "$PATCHES/llamaparse/pdfium.patch"
+
+# Vendored mimalloc (see third_party/mimalloc/README.llamaparse.md). Copied
+# rather than patched in: it is third-party source, not a diff of PDFium.
+rm -rf third_party/mimalloc
+cp -R "$THIRD_PARTY/mimalloc" third_party/mimalloc
 
 [ "$BUILD_TYPE" == "shared" ] && [ "$OS" != "emscripten" ] && [ "$OS" != "wasi" ] && apply_patch "$PATCHES/shared_library.patch"
 apply_patch "$PATCHES/public_headers.patch"

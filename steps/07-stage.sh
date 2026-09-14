@@ -39,9 +39,34 @@ rm -f "$STAGING/include/DEPS"
 rm -f "$STAGING/include/README"
 rm -f "$STAGING/include/PRESUBMIT.py"
 
+# llamaparse: with pdf_use_mimalloc the allocator lives entirely inside the
+# library. Fail the build if any allocator symbol (mimalloc, operator
+# new/delete, libc malloc family) leaks into the export table -- a host that
+# bound to one of these could free our memory with its own allocator.
+verify_allocator_exports() {
+  local lib="$1"
+  local tools="$SOURCE/third_party/llvm-build/Release+Asserts/bin"
+  local exports
+  case "$OS" in
+    linux|android) exports=$("$tools/llvm-nm" -D --defined-only "$lib" | awk '{print $3}') ;;
+    mac|ios) exports=$("$tools/llvm-nm" -gU "$lib" | awk '{print $3}') ;;
+    win) exports=$("$tools/llvm-readobj" --coff-exports "$lib" | awk '/Name:/{print $2}') ;;
+    *) return 0 ;;
+  esac
+  local leaked
+  leaked=$(printf '%s\n' "$exports" | grep -E '^_{0,2}(mi_|Zn|Zd|malloc$|free$|calloc$|realloc$|posix_memalign$|aligned_alloc$)' || true)
+  if [ -n "$leaked" ]; then
+    echo "ERROR: allocator symbols exported from $lib:" >&2
+    echo "$leaked" >&2
+    exit 1
+  fi
+  echo "allocator export check passed: $lib ($(printf '%s\n' "$exports" | grep -c .) exports)"
+}
+
 case "$OS-$BUILD_TYPE" in
   android-shared|linux-shared)
     mv "$BUILD/libpdfium.so" "$STAGING_LIB"
+    verify_allocator_exports "$STAGING_LIB/libpdfium.so"
     ;;
 
   android-static|linux-static|mac-static|ios-static)
@@ -50,6 +75,7 @@ case "$OS-$BUILD_TYPE" in
 
   mac-shared|ios-shared)
     mv "$BUILD/libpdfium.dylib" "$STAGING_LIB"
+    verify_allocator_exports "$STAGING_LIB/libpdfium.dylib"
     ;;
 
   emscripten-*)
@@ -85,6 +111,7 @@ case "$OS-$BUILD_TYPE" in
     mv "$BUILD/pdfium.dll.lib" "$STAGING_LIB"
     mkdir -p "$STAGING_BIN"
     mv "$BUILD/pdfium.dll" "$STAGING_BIN"
+    verify_allocator_exports "$STAGING_BIN/pdfium.dll"
     [ "$IS_DEBUG" == "true" ] && mv "$BUILD/pdfium.dll.pdb" "$STAGING_BIN"
     ;;
 

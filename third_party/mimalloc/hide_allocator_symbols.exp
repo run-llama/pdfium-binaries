@@ -1,0 +1,4 @@
+# Mac -unexported_symbols_list: keep this module's global operator new/delete
+# (defined in core/fxcrt/fx_memory_mimalloc.cpp) out of the export table.
+__Zn*
+__Zd*

@@ -1,8 +1,80 @@
 diff --git a/core/fpdfapi/font/cpdf_cidfont.cpp b/core/fpdfapi/font/cpdf_cidfont.cpp
-index 46555b702..dd0c8bf59 100644
+index 588e1e9..4d1a845 100644
 --- a/core/fpdfapi/font/cpdf_cidfont.cpp
 +++ b/core/fpdfapi/font/cpdf_cidfont.cpp
-@@ -908,3 +908,7 @@ const CIDTransform* CPDF_CIDFont::GetCIDTransform(uint16_t cid) const {
+@@ -574,12 +574,51 @@ int CPDF_CIDFont::GetCharWidth(uint32_t charcode) {
+   if (charcode < 0x80 && ansi_widths_fixed_) {
+     return (charcode >= 32 && charcode < 127) ? 500 : 0;
+   }
+-  uint16_t cid = CIDFromCharCode(charcode);
++  return WidthForCID(CIDFromCharCode(charcode));
++}
++
++namespace {
++constexpr int kNoWidth = std::numeric_limits<int>::min();
++constexpr int kMaxCID = 65535;
++}  // namespace
++
++void CPDF_CIDFont::BuildWidthTable() const {
++  width_table_built_ = true;
+   auto lhv_span =
+       fxcrt::reinterpret_span<const LowHighVal>(pdfium::span(width_list_));
++  int max_cid = -1;
++  for (const auto& lhv : lhv_span) {
++    if (lhv.high < 0 || lhv.high < lhv.low) {
++      continue;
++    }
++    max_cid = std::max(max_cid, std::min(lhv.high, kMaxCID));
++  }
++  if (max_cid < 0) {
++    return;
++  }
++  width_by_cid_.assign(static_cast<size_t>(max_cid) + 1, kNoWidth);
+   for (const auto& lhv : lhv_span) {
+-    if (IsMetricForCID(lhv, cid)) {
+-      return lhv.val;
++    if (lhv.high < 0 || lhv.high < lhv.low) {
++      continue;
++    }
++    const int lo = std::max(lhv.low, 0);
++    const int hi = std::min(lhv.high, max_cid);
++    for (int cid = lo; cid <= hi; ++cid) {
++      if (width_by_cid_[cid] == kNoWidth) {
++        width_by_cid_[cid] = lhv.val;
++      }
++    }
++  }
++}
++
++int CPDF_CIDFont::WidthForCID(uint16_t cid) const {
++  if (!width_table_built_) {
++    BuildWidthTable();
++  }
++  if (cid < width_by_cid_.size()) {
++    const int width = width_by_cid_[cid];
++    if (width != kNoWidth) {
++      return width;
+     }
+   }
+   return default_width_;
+@@ -604,15 +643,7 @@ CFX_Point16 CPDF_CIDFont::GetVertOrigin(uint16_t cid) const {
+       return {static_cast<int16_t>(lhvxy.x), static_cast<int16_t>(lhvxy.y)};
+     }
+   }
+-  int width = default_width_;
+-  auto lhv_span =
+-      fxcrt::reinterpret_span<const LowHighVal>(pdfium::span(width_list_));
+-  for (const auto& lhv : lhv_span) {
+-    if (IsMetricForCID(lhv, cid)) {
+-      width = lhv.val;
+-      break;
+-    }
+-  }
++  int width = WidthForCID(cid);
+   return {static_cast<int16_t>(width / 2), default_vy_};
+ }
+ 
+@@ -886,3 +917,7 @@ const CIDTransform* CPDF_CIDFont::GetCIDTransform(uint16_t cid) const {
               ? pTransform
               : nullptr;
  }
@@ -11,7 +83,7 @@ index 46555b702..dd0c8bf59 100644
 +  return (font_type_ == CIDFontType::kType1);
 +}
 diff --git a/core/fpdfapi/font/cpdf_cidfont.h b/core/fpdfapi/font/cpdf_cidfont.h
-index 629c9d927..fee827eac 100644
+index beeddf4..68740ac 100644
 --- a/core/fpdfapi/font/cpdf_cidfont.h
 +++ b/core/fpdfapi/font/cpdf_cidfont.h
 @@ -72,6 +72,7 @@ class CPDF_CIDFont final : public CPDF_Font {
@@ -22,10 +94,250 @@ index 629c9d927..fee827eac 100644
  
   private:
    enum class CIDFontType : bool {
+@@ -86,6 +87,11 @@ class CPDF_CIDFont final : public CPDF_Font {
+   int GetVerticalGlyph(int index, bool* pVertGlyph);
+   void LoadSubstFace();
+   wchar_t GetUnicodeFromCharCode(uint32_t charcode) const;
++  // llamaparse: `width_list_` is a list of [low high val] ranges that the
++  // upstream code scans linearly on every char; flatten it once into a
++  // per-CID table (first matching range wins, like the scan).
++  void BuildWidthTable() const;
++  int WidthForCID(uint16_t cid) const;
+ 
+   RetainPtr<const CPDF_CMap> cmap_;
+   UnownedPtr<const CPDF_CID2UnicodeMap> cid2unicode_map_;
+@@ -100,6 +106,8 @@ class CPDF_CIDFont final : public CPDF_Font {
+   int16_t default_vy_ = 880;
+   int16_t default_w1_ = -1000;
+   std::vector<int> width_list_;
++  mutable bool width_table_built_ = false;
++  mutable std::vector<int> width_by_cid_;
+   std::vector<int> vert_metrics_;
+   std::array<FX_RECT, 256> char_bbox_;
+ };
+diff --git a/core/fpdfapi/font/cpdf_font.cpp b/core/fpdfapi/font/cpdf_font.cpp
+index 232b056..dd31f44 100644
+--- a/core/fpdfapi/font/cpdf_font.cpp
++++ b/core/fpdfapi/font/cpdf_font.cpp
+@@ -107,6 +107,14 @@ WideString CPDF_Font::UnicodeFromCharCode(uint32_t charcode) const {
+   return to_unicode_map_ ? to_unicode_map_->Lookup(charcode) : WideString();
+ }
+ 
++uint32_t CPDF_Font::SpaceCharCode() const {
++  if (!space_charcode_loaded_) {
++    space_charcode_ = CharCodeFromUnicode(' ');
++    space_charcode_loaded_ = true;
++  }
++  return space_charcode_;
++}
++
+ uint32_t CPDF_Font::CharCodeFromUnicode(wchar_t unicode) const {
+   if (!to_unicode_loaded_) {
+     LoadUnicodeMap();
+diff --git a/core/fpdfapi/font/cpdf_font.h b/core/fpdfapi/font/cpdf_font.h
+index b5dff86..a907751 100644
+--- a/core/fpdfapi/font/cpdf_font.h
++++ b/core/fpdfapi/font/cpdf_font.h
+@@ -107,6 +107,9 @@ class CPDF_Font : public Retainable, public Observable {
+ #endif
+   virtual WideString UnicodeFromCharCode(uint32_t charcode) const;
+   virtual uint32_t CharCodeFromUnicode(wchar_t Unicode) const;
++  // llamaparse: `CharCodeFromUnicode(' ')` memoized; text extraction asks
++  // for it once per inter-item gap.
++  uint32_t SpaceCharCode() const;
+   virtual bool HasFontWidths() const;
+ 
+   bool ShouldUseFont(uint32_t glyph_id, bool has_to_unicode) const;
+@@ -187,6 +190,8 @@ class CPDF_Font : public Retainable, public Observable {
+   ByteString base_font_name_;
+   mutable std::unique_ptr<CPDF_ToUnicodeMap> to_unicode_map_;
+   mutable bool to_unicode_loaded_ = false;
++  mutable bool space_charcode_loaded_ = false;
++  mutable uint32_t space_charcode_ = 0;
+   bool will_be_destroyed_ = false;
+   int flags_ = 0;
+   int stem_v_ = 0;
+diff --git a/core/fpdfapi/font/cpdf_tounicodemap.cpp b/core/fpdfapi/font/cpdf_tounicodemap.cpp
+index 5a4d342..ebf0893 100644
+--- a/core/fpdfapi/font/cpdf_tounicodemap.cpp
++++ b/core/fpdfapi/font/cpdf_tounicodemap.cpp
+@@ -54,7 +54,33 @@ CPDF_ToUnicodeMap::CPDF_ToUnicodeMap(RetainPtr<const CPDF_Stream> pStream) {
+ 
+ CPDF_ToUnicodeMap::~CPDF_ToUnicodeMap() = default;
+ 
++namespace {
++// Charcodes are at most 4 bytes but real fonts stay within 2; above that the
++// cache would be sparse, so fall through to the uncached path.
++constexpr uint32_t kLookupCacheLimit = 65536;
++}  // namespace
++
+ WideString CPDF_ToUnicodeMap::Lookup(uint32_t charcode) const {
++  if (charcode >= kLookupCacheLimit) {
++    return LookupUncached(charcode);
++  }
++  if (charcode < lookup_cached_.size() && lookup_cached_[charcode]) {
++    return lookup_cache_[charcode];
++  }
++  WideString result = LookupUncached(charcode);
++  if (charcode >= lookup_cached_.size()) {
++    size_t size = std::max<size_t>(lookup_cached_.size() * 2, 256);
++    size = std::max<size_t>(size, static_cast<size_t>(charcode) + 1);
++    size = std::min<size_t>(size, kLookupCacheLimit);
++    lookup_cache_.resize(size);
++    lookup_cached_.resize(size, 0);
++  }
++  lookup_cache_[charcode] = result;
++  lookup_cached_[charcode] = 1;
++  return result;
++}
++
++WideString CPDF_ToUnicodeMap::LookupUncached(uint32_t charcode) const {
+   auto it = map_.find(charcode);
+   if (it == map_.end()) {
+     if (!base_map_) {
+diff --git a/core/fpdfapi/font/cpdf_tounicodemap.h b/core/fpdfapi/font/cpdf_tounicodemap.h
+index 5e9dddc..c91094a 100644
+--- a/core/fpdfapi/font/cpdf_tounicodemap.h
++++ b/core/fpdfapi/font/cpdf_tounicodemap.h
+@@ -25,6 +25,8 @@ class CPDF_ToUnicodeMap {
+   ~CPDF_ToUnicodeMap();
+ 
+   WideString Lookup(uint32_t charcode) const;
++  // llamaparse: uncached `Lookup`; the public one memoizes per charcode.
++  WideString LookupUncached(uint32_t charcode) const;
+   uint32_t ReverseLookup(wchar_t unicode) const;
+ 
+   size_t GetUnicodeCountByCharcodeForTesting(uint32_t charcode) const;
+@@ -67,6 +69,12 @@ class CPDF_ToUnicodeMap {
+ 
+   UnownedPtr<const CPDF_CID2UnicodeMap> base_map_;
+   std::vector<WideString> multi_char_vec_;
++  // llamaparse: text extraction calls Lookup() once per character; the map
++  // walk plus a fresh WideString allocation per call dominated
++  // FPDFText_LoadPage. fxcrt strings are refcounted, so handing back a copy
++  // of a cached result is a refcount bump instead of a malloc.
++  mutable std::vector<WideString> lookup_cache_;
++  mutable std::vector<uint8_t> lookup_cached_;
+ };
+ 
+ #endif  // CORE_FPDFAPI_FONT_CPDF_TOUNICODEMAP_H_
+diff --git a/core/fpdfapi/page/cpdf_streamcontentparser.cpp b/core/fpdfapi/page/cpdf_streamcontentparser.cpp
+index a0d239f..039bef4 100644
+--- a/core/fpdfapi/page/cpdf_streamcontentparser.cpp
++++ b/core/fpdfapi/page/cpdf_streamcontentparser.cpp
+@@ -1234,13 +1234,23 @@ RetainPtr<CPDF_Object> CPDF_StreamContentParser::FindResourceObj(
+ 
+ RetainPtr<CPDF_Font> CPDF_StreamContentParser::FindFont(
+     const ByteString& name) {
+-  RetainPtr<CPDF_Dictionary> font_dict(
+-      ToDictionary(FindResourceObj("Font", name)));
+-  if (!font_dict) {
+-    return CPDF_Font::GetStockFont(document_, CFX_Font::kDefaultAnsiFontName);
++  RetainPtr<CPDF_Font> font;
++  auto cached = font_cache_.find(name);
++  if (cached != font_cache_.end()) {
++    font = cached->second;
++  } else {
++    RetainPtr<CPDF_Dictionary> font_dict(
++        ToDictionary(FindResourceObj("Font", name)));
++    if (!font_dict) {
++      return CPDF_Font::GetStockFont(document_,
++                                     CFX_Font::kDefaultAnsiFontName);
++    }
++    font = CPDF_DocPageData::FromDocument(document_)->GetFont(
++        std::move(font_dict));
++    if (font) {
++      font_cache_[name] = font;
++    }
+   }
+-  RetainPtr<CPDF_Font> font =
+-      CPDF_DocPageData::FromDocument(document_)->GetFont(std::move(font_dict));
+   if (font) {
+     // Save `name` for later retrieval by the CPDF_TextObject that uses the
+     // font.
+diff --git a/core/fpdfapi/page/cpdf_streamcontentparser.h b/core/fpdfapi/page/cpdf_streamcontentparser.h
+index 8aa0be5..abd4b16 100644
+--- a/core/fpdfapi/page/cpdf_streamcontentparser.h
++++ b/core/fpdfapi/page/cpdf_streamcontentparser.h
+@@ -8,6 +8,7 @@
+ #define CORE_FPDFAPI_PAGE_CPDF_STREAMCONTENTPARSER_H_
+ 
+ #include <array>
++#include <map>
+ #include <memory>
+ #include <optional>
+ #include <stack>
+@@ -222,6 +223,10 @@ class CPDF_StreamContentParser {
+   std::unique_ptr<CPDF_AllStates> cur_states_;
+   std::stack<std::unique_ptr<CPDF_ContentMarks>> content_marks_stack_;
+   std::vector<std::unique_ptr<CPDF_TextObject>> clip_text_list_;
++  // llamaparse: `Tf` resolves the font resource name through the resource
++  // dictionaries and the document font map on every operator; the mapping is
++  // fixed for the lifetime of one parser, so memoize it.
++  std::map<ByteString, RetainPtr<CPDF_Font>> font_cache_;
+   std::vector<CFX_Path::Point> path_points_;
+   CFX_PointF path_start_;
+   CFX_PointF path_current_;
+diff --git a/core/fpdfdoc/cpdf_structelement.cpp b/core/fpdfdoc/cpdf_structelement.cpp
+index 4448a02..0a162ac 100644
+--- a/core/fpdfdoc/cpdf_structelement.cpp
++++ b/core/fpdfdoc/cpdf_structelement.cpp
+@@ -100,6 +100,12 @@ int CPDF_StructElement::GetKidContentId(size_t index) const {
+              : -1;
+ }
+ 
++int CPDF_StructElement::GetKidObjNum(size_t index) const {
++  return kids_[index].type_ == Kid::kObject
++             ? kids_[index].ref_obj_num_
++             : -1;
++}
++
+ bool CPDF_StructElement::UpdateKidIfElement(const CPDF_Dictionary* dict,
+                                             CPDF_StructElement* pElement) {
+   bool bSave = false;
+diff --git a/core/fpdfdoc/cpdf_structelement.h b/core/fpdfdoc/cpdf_structelement.h
+index 1578ade..8306fef 100644
+--- a/core/fpdfdoc/cpdf_structelement.h
++++ b/core/fpdfdoc/cpdf_structelement.h
+@@ -36,6 +36,7 @@ class CPDF_StructElement final : public Retainable {
+   size_t CountKids() const;
+   CPDF_StructElement* GetKidIfElement(size_t index) const;
+   int GetKidContentId(size_t index) const;
++  int GetKidObjNum(size_t index) const;
+   bool UpdateKidIfElement(const CPDF_Dictionary* dict,
+                           CPDF_StructElement* pElement);
+ 
 diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
+index 13ff030..759f2aa 100644
 --- a/core/fpdftext/cpdf_textpage.cpp
 +++ b/core/fpdftext/cpdf_textpage.cpp
-@@ -400,6 +400,15 @@
+@@ -120,14 +120,14 @@ DataVector<wchar_t> GetUnicodeNormalization(wchar_t wch) {
+   return DataVector<wchar_t>(range.begin(), range.end());
+ }
+ 
+-float MaskPercentFilled(const std::vector<bool>& mask,
++float MaskPercentFilled(const std::vector<uint8_t>& mask,
+                         int32_t start,
+                         int32_t end) {
+   if (start >= end) {
+     return 0;
+   }
+   float count = std::count_if(mask.begin() + start, mask.begin() + end,
+-                              [](bool r) { return r; });
++                              [](uint8_t r) { return r != 0; });
+   return count / (end - start);
+ }
+ 
+@@ -210,7 +210,7 @@ int GetCharWidth(uint32_t charCode, CPDF_Font* font) {
+ float CalculateSpaceThreshold(CPDF_Font* font,
+                               float fontsize_h,
+                               uint32_t char_code) {
+-  const uint32_t space_charcode = font->CharCodeFromUnicode(' ');
++  const uint32_t space_charcode = font->SpaceCharCode();
+   float threshold = 0;
+   if (space_charcode != CPDF_Font::kInvalidCharCode) {
+     threshold = fontsize_h * font->GetCharWidth(space_charcode) / 1000;
+@@ -400,6 +400,15 @@ void CPDF_TextPage::Init() {
        }
      }
    }
@@ -41,7 +353,36 @@ diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
  }
  
  int CPDF_TextPage::CountChars() const {
-@@ -819,19 +828,46 @@
+@@ -659,8 +668,10 @@ CPDF_TextPage::TextOrientation CPDF_TextPage::FindTextlineFlowOrientation()
+     return TextOrientation::kUnknown;
+   }
+ 
+-  std::vector<bool> nHorizontalMask(nPageWidth);
+-  std::vector<bool> nVerticalMask(nPageHeight);
++  // llamaparse: byte masks instead of std::vector<bool> so the per-object
++  // range fills below are memsets rather than bit twiddling.
++  std::vector<uint8_t> nHorizontalMask(nPageWidth);
++  std::vector<uint8_t> nVerticalMask(nPageHeight);
+   float fLineHeight = 0.0f;
+   int32_t nStartH = nPageWidth;
+   int32_t nEndH = 0;
+@@ -683,12 +694,9 @@ CPDF_TextPage::TextOrientation CPDF_TextPage::FindTextlineFlowOrientation()
+       continue;
+     }
+ 
+-    for (int32_t i = minH; i < maxH; ++i) {
+-      nHorizontalMask[i] = true;
+-    }
+-    for (int32_t i = minV; i < maxV; ++i) {
+-      nVerticalMask[i] = true;
+-    }
++    std::fill(nHorizontalMask.begin() + minH, nHorizontalMask.begin() + maxH,
++              1);
++    std::fill(nVerticalMask.begin() + minV, nVerticalMask.begin() + maxV, 1);
+ 
+     nStartH = std::min(nStartH, minH);
+     nEndH = std::max(nEndH, maxH);
+@@ -819,19 +827,46 @@ void CPDF_TextPage::CloseTempLine() {
    }
  
    WideString str = temp_text_buf_.MakeString();
@@ -68,11 +409,12 @@ diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
 -      temp_char_list_.erase(temp_char_list_.begin() + i);
 -      str.Delete(i);
 -      --i;
+-    }
+-    prev_char_is_space = true;
 +    if (write_pos != i) {
 +      str.SetAt(write_pos, str[i]);
 +      temp_char_list_[write_pos] = temp_char_list_[i];
-     }
--    prev_char_is_space = true;
++    }
 +    prev_char_is_space = is_space;
 +    ++write_pos;
 +  }
@@ -96,40 +438,196 @@ diff --git a/core/fpdftext/cpdf_textpage.cpp b/core/fpdftext/cpdf_textpage.cpp
    }
    CFX_BidiString bidi(str, /*auto_order=*/false);
    if (rtl_) {
-diff --git a/core/fpdfdoc/cpdf_structelement.cpp b/core/fpdfdoc/cpdf_structelement.cpp
-index 4448a02ff..0a162ac52 100644
---- a/core/fpdfdoc/cpdf_structelement.cpp
-+++ b/core/fpdfdoc/cpdf_structelement.cpp
-@@ -100,6 +100,12 @@ int CPDF_StructElement::GetKidContentId(size_t index) const {
-              : -1;
+diff --git a/core/fxcrt/BUILD.gn b/core/fxcrt/BUILD.gn
+index 0e14e8b..c8fade6 100644
+--- a/core/fxcrt/BUILD.gn
++++ b/core/fxcrt/BUILD.gn
+@@ -159,7 +159,12 @@ source_set("fxcrt") {
+     "//third_party/abseil-cpp:absl",
+     "//third_party/icu:icuuc",
+   ]
+-  if (pdf_use_partition_alloc) {
++  if (pdf_use_mimalloc) {
++    assert(!pdf_use_partition_alloc,
++           "pdf_use_mimalloc and pdf_use_partition_alloc are exclusive")
++    sources += [ "fx_memory_mimalloc.cpp" ]
++    public_deps += [ "//third_party/mimalloc" ]
++  } else if (pdf_use_partition_alloc) {
+     sources += [ "fx_memory_pa.cpp" ]
+     public_deps += [ "../../third_party:pdfium_pa" ]
+   } else {
+diff --git a/core/fxcrt/fx_bidi.cpp b/core/fxcrt/fx_bidi.cpp
+index 17e43c7..7905e54 100644
+--- a/core/fxcrt/fx_bidi.cpp
++++ b/core/fxcrt/fx_bidi.cpp
+@@ -60,8 +60,32 @@ void CFX_BidiChar::StartNewSegment(CFX_BidiChar::Direction direction) {
+   current_segment_.direction = direction;
  }
  
-+int CPDF_StructElement::GetKidObjNum(size_t index) const {
-+  return kids_[index].type_ == Kid::kObject
-+             ? kids_[index].ref_obj_num_
-+             : -1;
++namespace {
++// llamaparse: every right-to-left bidi class (R, AL, and the RTL controls)
++// lives at or above U+0590, so a string entirely below it can only produce
++// left / left-weak / neutral segments. The consumers in CPDF_TextPage emit
++// those in logical order regardless of segment boundaries, so one segment
++// spanning the whole string is observably identical and skips the per-char
++// class lookup.
++constexpr wchar_t kFirstPossibleRtlChar = 0x0590;
++}  // namespace
++
+ CFX_BidiString::CFX_BidiString(const WideString& str, bool auto_order)
+     : str_(str) {
++  bool may_contain_rtl = false;
++  for (wchar_t c : str_) {
++    if (c >= kFirstPossibleRtlChar) {
++      may_contain_rtl = true;
++      break;
++    }
++  }
++  if (!may_contain_rtl) {
++    if (!str_.IsEmpty()) {
++      order_.push_back(CFX_BidiChar::Segment{0, str_.GetLength(),
++                                             CFX_BidiChar::Direction::kLeft});
++    }
++    return;
++  }
+   CFX_BidiChar bidi;
+   for (wchar_t c : str_) {
+     if (bidi.AppendChar(c)) {
+diff --git a/core/fxcrt/fx_memory.cpp b/core/fxcrt/fx_memory.cpp
+index 89170ea..f4f28d6 100644
+--- a/core/fxcrt/fx_memory.cpp
++++ b/core/fxcrt/fx_memory.cpp
+@@ -90,7 +90,9 @@ void* FX_AlignedAlloc(size_t size, size_t alignment) {
+   DCHECK(std::has_single_bit(alignment));
+   DCHECK_EQ(alignment % sizeof(void*), 0u);
+   void* ptr = nullptr;
+-#if defined(COMPILER_MSVC)
++#if defined(PDF_USE_MIMALLOC)
++  ptr = mi_malloc_aligned(size, alignment);
++#elif defined(COMPILER_MSVC)
+   ptr = _aligned_malloc(size, alignment);
+ #elif BUILDFLAG(IS_ANDROID)
+   // Android technically supports posix_memalign(), but does not expose it in
+diff --git a/core/fxcrt/fx_memory.h b/core/fxcrt/fx_memory.h
+index 9191dc8..8a0decf 100644
+--- a/core/fxcrt/fx_memory.h
++++ b/core/fxcrt/fx_memory.h
+@@ -30,6 +30,10 @@ void FXMEM_DefaultFree(void* pointer);
+ #include <stdlib.h>
+ #endif
+ 
++#if defined(PDF_USE_MIMALLOC)
++#include <mimalloc.h>
++#endif
++
+ NOINLINE void FX_OutOfMemoryTerminate(size_t size);
+ 
+ // General Partition Allocators.
+@@ -80,7 +84,9 @@ NOINLINE void FX_OutOfMemoryTerminate(size_t size);
+ void* FX_AlignedAlloc(size_t size, size_t alignment);
+ 
+ inline void FX_AlignedFree(void* ptr) {
+-#if defined(COMPILER_MSVC)
++#if defined(PDF_USE_MIMALLOC)
++  mi_free(ptr);
++#elif defined(COMPILER_MSVC)
+   _aligned_free(ptr);
+ #else
+   free(ptr);
+diff --git a/core/fxcrt/fx_memory_mimalloc.cpp b/core/fxcrt/fx_memory_mimalloc.cpp
+new file mode 100644
+index 0000000..2bc4188
+--- /dev/null
++++ b/core/fxcrt/fx_memory_mimalloc.cpp
+@@ -0,0 +1,83 @@
++// Copyright 2022 The PDFium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// llamaparse: fx_memory_malloc.cpp with the allocation funnels pointed at the
++// vendored mimalloc (//third_party/mimalloc). Content-stream parsing is
++// dominated by tiny ByteString / CPDF_Object allocations, and the system
++// allocator was ~25% of a text-extraction profile.
++//
++// This is not a malloc override. libc malloc is untouched, so bundled C
++// libraries that call it directly keep using it, and the host process keeps
++// its own allocator. Pairing is preserved by construction: FX_Alloc/FX_Free
++// and new/delete each stay on one side, exactly as with PartitionAlloc.
++
++#include "core/fxcrt/fx_memory.h"
++
++#include <mimalloc.h>
++
++#include <limits>
++
++#include "build/build_config.h"
++#include "core/fxcrt/fx_safe_types.h"
++
++#if defined(PDF_USE_PARTITION_ALLOC) || !defined(PDF_USE_MIMALLOC)
++#error "File compiled under wrong build option."
++#endif
++
++// Defines this module's global C++ operator new/delete in terms of
++// mi_new/mi_free. Include exactly once per module.
++#include <mimalloc-new-delete.h>
++
++namespace pdfium {
++namespace internal {
++
++// Slightly less than 2GB, typically.
++constexpr size_t kMallocSizeLimit = std::numeric_limits<int>::max() - (1 << 12);
++
++void* Alloc(size_t num_members, size_t member_size) {
++  FX_SAFE_SIZE_T total = member_size;
++  total *= num_members;
++  if (!total.IsValid() || total.ValueOrDie() >= kMallocSizeLimit) {
++    return nullptr;
++  }
++  return mi_malloc(total.ValueOrDie());
 +}
 +
- bool CPDF_StructElement::UpdateKidIfElement(const CPDF_Dictionary* dict,
-                                             CPDF_StructElement* pElement) {
-   bool bSave = false;
-diff --git a/core/fpdfdoc/cpdf_structelement.h b/core/fpdfdoc/cpdf_structelement.h
-index 1578ade1a..8306fef6d 100644
---- a/core/fpdfdoc/cpdf_structelement.h
-+++ b/core/fpdfdoc/cpdf_structelement.h
-@@ -36,6 +36,7 @@ class CPDF_StructElement final : public Retainable {
-   size_t CountKids() const;
-   CPDF_StructElement* GetKidIfElement(size_t index) const;
-   int GetKidContentId(size_t index) const;
-+  int GetKidObjNum(size_t index) const;
-   bool UpdateKidIfElement(const CPDF_Dictionary* dict,
-                           CPDF_StructElement* pElement);
- 
++void* Calloc(size_t num_members, size_t member_size) {
++  FX_SAFE_SIZE_T total = member_size;
++  total *= num_members;
++  if (!total.IsValid() || total.ValueOrDie() >= kMallocSizeLimit) {
++    return nullptr;
++  }
++  return mi_calloc(num_members, member_size);
++}
++
++void* Realloc(void* ptr, size_t num_members, size_t member_size) {
++  FX_SAFE_SIZE_T total = num_members;
++  total *= member_size;
++  if (!total.IsValid() || total.ValueOrDie() >= kMallocSizeLimit) {
++    return nullptr;
++  }
++  return mi_realloc(ptr, total.ValueOrDie());
++}
++
++void Dealloc(void* ptr) {
++  mi_free(ptr);
++}
++
++void* StringAlloc(size_t num_members, size_t member_size) {
++  FX_SAFE_SIZE_T total = member_size;
++  total *= num_members;
++  if (!total.IsValid()) {
++    return nullptr;
++  }
++  return mi_malloc(total.ValueOrDie());
++}
++
++void StringDealloc(void* ptr) {
++  mi_free(ptr);
++}
++
++}  // namespace internal
++}  // namespace pdfium
 diff --git a/fpdfsdk/fpdf_annot.cpp b/fpdfsdk/fpdf_annot.cpp
-index 956c24c42..e1cd789ee 100644
+index fb5c862..d1ad0e5 100644
 --- a/fpdfsdk/fpdf_annot.cpp
 +++ b/fpdfsdk/fpdf_annot.cpp
-@@ -1769,3 +1769,12 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
+@@ -1754,3 +1754,12 @@ FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name) {
        "FS", doc, fs_obj->GetObjNum());
    return FPDFAttachmentFromCPDFObject(fs_obj);
  }
@@ -143,9 +641,10 @@ index 956c24c42..e1cd789ee 100644
 +  return pAnnotDict->GetObjNum();
 +}
 diff --git a/fpdfsdk/fpdf_editpage.cpp b/fpdfsdk/fpdf_editpage.cpp
+index 758aae8..48a1dd0 100644
 --- a/fpdfsdk/fpdf_editpage.cpp
 +++ b/fpdfsdk/fpdf_editpage.cpp
-@@ -274,6 +274,21 @@
+@@ -294,6 +294,21 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetRotation(FPDF_PAGE page) {
    return IsPageObject(pPage) ? pPage->GetPageRotation() : -1;
  }
  
@@ -168,10 +667,10 @@ diff --git a/fpdfsdk/fpdf_editpage.cpp b/fpdfsdk/fpdf_editpage.cpp
  FPDFPage_InsertObject(FPDF_PAGE page, FPDF_PAGEOBJECT page_object) {
    CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
 diff --git a/fpdfsdk/fpdf_edittext.cpp b/fpdfsdk/fpdf_edittext.cpp
-index 11925926a..a0239ca87 100644
+index 727d302..a29c7aa 100644
 --- a/fpdfsdk/fpdf_edittext.cpp
 +++ b/fpdfsdk/fpdf_edittext.cpp
-@@ -756,6 +756,34 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font) {
+@@ -757,6 +757,34 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font) {
    return cfont->IsEmbedded() ? 1 : 0;
  }
  
@@ -206,7 +705,7 @@ index 11925926a..a0239ca87 100644
  FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font) {
    auto* pFont = CPDFFontFromFPDFFont(font);
    if (!pFont) {
-@@ -788,6 +816,26 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+@@ -832,6 +860,26 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
    return true;
  }
  
@@ -233,7 +732,7 @@ index 11925926a..a0239ca87 100644
  FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV
  FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
    auto* pFont = CPDFFontFromFPDFFont(font);
-@@ -825,6 +873,168 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
+@@ -869,6 +917,168 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
    return FPDFGlyphPathFromCFXPath(pPath);
  }
  
@@ -403,7 +902,7 @@ index 11925926a..a0239ca87 100644
  FPDFGlyphPath_CountGlyphSegments(FPDF_GLYPHPATH glyphpath) {
    auto* pPath = CFXPathFromFPDFGlyphPath(glyphpath);
 diff --git a/fpdfsdk/fpdf_structtree.cpp b/fpdfsdk/fpdf_structtree.cpp
-index 96455e726..d1ca4573d 100644
+index 96455e7..d1ca457 100644
 --- a/fpdfsdk/fpdf_structtree.cpp
 +++ b/fpdfsdk/fpdf_structtree.cpp
 @@ -338,6 +338,18 @@ FPDF_StructElement_GetChildMarkedContentID(FPDF_STRUCTELEMENT struct_element,
@@ -426,14 +925,13 @@ index 96455e726..d1ca4573d 100644
  FPDF_StructElement_GetParent(FPDF_STRUCTELEMENT struct_element) {
    CPDF_StructElement* elem =
 diff --git a/fpdfsdk/fpdf_text.cpp b/fpdfsdk/fpdf_text.cpp
+index 960b2ae..c0abc16 100644
 --- a/fpdfsdk/fpdf_text.cpp
 +++ b/fpdfsdk/fpdf_text.cpp
-@@ -74,6 +74,60 @@
- 
-   const CPDF_TextPage::CharInfo& charinfo = textpage->GetCharInfo(index);
+@@ -76,6 +76,60 @@ FPDFText_GetUnicode(FPDF_TEXTPAGE text_page, int index) {
    return charinfo.unicode();
-+}
-+
+ }
+ 
 +FPDF_EXPORT unsigned int FPDF_CALLCONV
 +FPDFText_GetCharCode(FPDF_TEXTPAGE text_page, int index) {
 +  CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, index);
@@ -486,14 +984,33 @@ diff --git a/fpdfsdk/fpdf_text.cpp b/fpdfsdk/fpdf_text.cpp
 +        text_object ? static_cast<int>(text_object->GetTextRenderMode()) : -1;
 +  }
 +  return written;
- }
- 
++}
++
  FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
+ FPDFText_GetTextObject(FPDF_TEXTPAGE text_page, int index) {
+   CPDF_TextPage* textpage = GetTextPageForValidIndex(text_page, index);
+diff --git a/pdfium.gni b/pdfium.gni
+index 937b50c..bc82f57 100644
+--- a/pdfium.gni
++++ b/pdfium.gni
+@@ -35,6 +35,12 @@ declare_args() {
+   # malloc is controlled by args in build_overrides/partition_alloc.gni.
+   pdf_use_partition_alloc = pdf_use_partition_alloc_override
+ 
++  # llamaparse: route PDFium's own allocation funnels (fxcrt FX_Alloc family,
++  # the module's global operator new/delete) through the vendored mimalloc in
++  # //third_party/mimalloc. Not a malloc override; libc malloc is untouched.
++  # Mutually exclusive with pdf_use_partition_alloc.
++  pdf_use_mimalloc = false
++
+   # Build PDFium to use AGG (fully supported).
+   pdf_use_agg = true
+ 
 diff --git a/public/fpdf_annot.h b/public/fpdf_annot.h
-index 0aa9f6886..45cec5103 100644
+index b452cfa..05f9b1e 100644
 --- a/public/fpdf_annot.h
 +++ b/public/fpdf_annot.h
-@@ -1040,6 +1040,14 @@ FPDFAnnot_GetFileAttachment(FPDF_ANNOTATION annot);
+@@ -1037,6 +1037,14 @@ FPDFAnnot_GetFileAttachment(FPDF_ANNOTATION annot);
  FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
  FPDFAnnot_AddFileAttachment(FPDF_ANNOTATION annot, FPDF_WIDESTRING name);
  
@@ -509,7 +1026,7 @@ index 0aa9f6886..45cec5103 100644
  }  // extern "C"
  #endif  // __cplusplus
 diff --git a/public/fpdf_edit.h b/public/fpdf_edit.h
-index 0f3c4c5e9..0cfd40c80 100644
+index 2dbd60d..ebe7a62 100644
 --- a/public/fpdf_edit.h
 +++ b/public/fpdf_edit.h
 @@ -74,6 +74,22 @@
@@ -535,7 +1052,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  typedef struct FPDF_IMAGEOBJ_METADATA {
    // The image width in pixels.
    unsigned int width;
-@@ -171,6 +187,19 @@
+@@ -171,6 +187,19 @@ FPDF_MovePages(FPDF_DOCUMENT document,
  // Or returns -1 on error.
  FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetRotation(FPDF_PAGE page);
  
@@ -555,7 +1072,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Set rotation for |page|.
  //
  //   page   - handle to a page.
-@@ -1553,6 +1582,14 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font);
+@@ -1630,6 +1659,14 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetIsEmbedded(FPDF_FONT font);
  // defined in ISO 32000-1:2008, table 123, -1 on failure.
  FPDF_EXPORT int FPDF_CALLCONV FPDFFont_GetFlags(FPDF_FONT font);
  
@@ -570,7 +1087,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Experimental API.
  // Get the font weight of a font.
  //
-@@ -1622,6 +1659,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
+@@ -1699,6 +1736,24 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFFont_GetGlyphWidth(FPDF_FONT font,
                                                             float font_size,
                                                             float* width);
  
@@ -595,7 +1112,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Experimental API.
  // Get the glyphpath describing how to draw a font glyph.
  //
-@@ -1634,6 +1689,78 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
+@@ -1711,6 +1766,78 @@ FPDF_EXPORT FPDF_GLYPHPATH FPDF_CALLCONV FPDFFont_GetGlyphPath(FPDF_FONT font,
                                                                 uint32_t glyph,
                                                                 float font_size);
  
@@ -675,7 +1192,7 @@ index 0f3c4c5e9..0cfd40c80 100644
  // Get number of segments inside glyphpath.
  //
 diff --git a/public/fpdf_structtree.h b/public/fpdf_structtree.h
-index c9823a634..b81aa4925 100644
+index c9823a6..b81aa49 100644
 --- a/public/fpdf_structtree.h
 +++ b/public/fpdf_structtree.h
 @@ -308,6 +308,24 @@ FPDF_EXPORT int FPDF_CALLCONV
@@ -704,9 +1221,10 @@ index c9823a634..b81aa4925 100644
  // Function: FPDF_StructElement_GetParent
  //          Get the parent of the structure element.
 diff --git a/public/fpdf_text.h b/public/fpdf_text.h
+index fe96ccd..b987751 100644
 --- a/public/fpdf_text.h
 +++ b/public/fpdf_text.h
-@@ -74,6 +74,69 @@
+@@ -74,6 +74,69 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFText_CountChars(FPDF_TEXTPAGE text_page);
  FPDF_EXPORT unsigned int FPDF_CALLCONV
  FPDFText_GetUnicode(FPDF_TEXTPAGE text_page, int index);
  

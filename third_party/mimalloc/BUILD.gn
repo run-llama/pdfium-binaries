@@ -1,0 +1,64 @@
+# Vendored mimalloc v3.1.5 (MIT). See README.llamaparse.md.
+#
+# Consumed only through the mi_* API by PDFium's allocation funnels when
+# `pdf_use_mimalloc` is set; libc malloc is not overridden and, with the
+# hidden default visibility of the shared library build, none of mimalloc
+# becomes part of the export table.
+
+config("mimalloc_public") {
+  include_dirs = [ "include" ]
+  defines = [ "PDF_USE_MIMALLOC" ]
+}
+
+config("mimalloc_private") {
+  cflags = [
+    # Chromium passes -D__DATE__= / -D__TIME__= (empty) for reproducible
+    # builds; mimalloc's version banner in options.c uses both as strings.
+    # Redefining them keeps the build reproducible and compilable.
+    "-Wno-builtin-macro-redefined",
+    "-D__DATE__=\"redacted\"",
+    "-D__TIME__=\"redacted\"",
+
+    # The Chromium UBSan trap flags are meant for PDFium's parsers, not for
+    # an allocator that legitimately indexes past declared array bounds.
+    "-fno-sanitize=all",
+  ]
+}
+
+# Propagated to the shared library that links us. The module's global
+# operator new/delete are declared with default visibility by <new>, so
+# -fvisibility=hidden does not cover them; hide them at link time. On Windows
+# only __declspec(dllexport) symbols are exported, so nothing is needed.
+config("mimalloc_link") {
+  if (is_mac || is_ios) {
+    ldflags = [ "-Wl,-unexported_symbols_list," +
+                rebase_path("hide_allocator_symbols.exp", root_build_dir) ]
+    inputs = [ "hide_allocator_symbols.exp" ]
+  } else if (is_linux || is_android) {
+    ldflags = [ "-Wl,--version-script=" +
+                rebase_path("hide_allocator_symbols.lds", root_build_dir) ]
+    inputs = [ "hide_allocator_symbols.lds" ]
+  }
+}
+
+static_library("mimalloc") {
+  sources = [ "src/static.c" ]
+  public_configs = [ ":mimalloc_public" ]
+  all_dependent_configs = [ ":mimalloc_link" ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+
+  # Appended last so these win over the Chromium defaults that precede them.
+  configs += [ ":mimalloc_private" ]
+
+  if (is_win) {
+    libs = [
+      "advapi32.lib",
+      "bcrypt.lib",
+      "psapi.lib",
+      "shell32.lib",
+      "user32.lib",
+    ]
+  }
+}
