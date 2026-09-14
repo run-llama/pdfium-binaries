@@ -45,6 +45,13 @@ rm -f "$STAGING/include/PRESUBMIT.py"
 # bound to one of these could free our memory with its own allocator.
 verify_allocator_exports() {
   local lib="$1"
+  # Only meaningful when mimalloc is linked in. Builds without it (32-bit,
+  # ppc64, ...) export libc++'s own operator new/delete exactly as they always
+  # did; that is not a leak of ours, so leave those export tables alone.
+  if ! grep -q '^pdf_use_mimalloc = true' "$BUILD/args.gn"; then
+    echo "allocator export check skipped: pdf_use_mimalloc is off for this build"
+    return 0
+  fi
   local tools="$SOURCE/third_party/llvm-build/Release+Asserts/bin"
   local exports
   case "$OS" in
