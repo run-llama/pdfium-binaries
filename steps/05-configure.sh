@@ -46,11 +46,16 @@ mkdir -p "$BUILD"
 
   # llamaparse: PDFium's allocation funnels go through vendored mimalloc on
   # the platforms we ship to. PDFium_USE_MIMALLOC=true|false overrides the
-  # per-OS default (A/B builds, bisecting).
+  # default (A/B builds, bisecting).
+  #
+  # 64-bit targets only: mimalloc's stats use 64-bit atomics, which on i386
+  # lower to libatomic calls (`undefined symbol: __atomic_load` at link) and
+  # linking libatomic would add a runtime .so dependency to a shipped binary.
+  # 32-bit builds keep the parser speedups and the system allocator.
   USE_MIMALLOC=${PDFium_USE_MIMALLOC:-auto}
   if [ "$USE_MIMALLOC" == "auto" ]; then
-    case "$OS" in
-      linux|mac|win) USE_MIMALLOC=true ;;
+    case "$OS-$TARGET_CPU" in
+      linux-x64|linux-arm64|mac-x64|mac-arm64|win-x64|win-arm64) USE_MIMALLOC=true ;;
       *) USE_MIMALLOC=false ;;
     esac
   fi
