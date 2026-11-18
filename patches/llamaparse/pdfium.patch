@@ -222,10 +222,56 @@ index 5e9dddc..c91094a 100644
  
  #endif  // CORE_FPDFAPI_FONT_CPDF_TOUNICODEMAP_H_
 diff --git a/core/fpdfapi/page/cpdf_streamcontentparser.cpp b/core/fpdfapi/page/cpdf_streamcontentparser.cpp
-index a0d239f..039bef4 100644
+index a0d239f..6574135 100644
 --- a/core/fpdfapi/page/cpdf_streamcontentparser.cpp
 +++ b/core/fpdfapi/page/cpdf_streamcontentparser.cpp
-@@ -1234,13 +1234,23 @@ RetainPtr<CPDF_Object> CPDF_StreamContentParser::FindResourceObj(
+@@ -54,6 +54,12 @@ namespace {
+ 
+ constexpr int kMaxFormLevel = 40;
+ 
++// Each BMC/BDC clones the full mark list of its parent, so stack memory grows
++// quadratically with nesting depth. Malformed producers emit millions of
++// nested BDCs (4M+ seen in the wild), which OOMs. Beyond this depth, further
++// marks are counted but not recorded, so their EMCs still balance.
++constexpr size_t kMaxMarkedContentDepth = 256;
++
+ constexpr int kSingleCoordinatePair = 1;
+ constexpr int kTensorCoordinatePairs = 16;
+ constexpr int kCoonsCoordinatePairs = 12;
+@@ -623,6 +629,10 @@ void CPDF_StreamContentParser::Handle_EOFillStrokePath() {
+ }
+ 
+ void CPDF_StreamContentParser::Handle_BeginMarkedContent_Dictionary() {
++  if (content_marks_stack_.size() > kMaxMarkedContentDepth) {
++    ++ignored_marked_content_depth_;
++    return;
++  }
+   RetainPtr<CPDF_Object> pProperty = GetObject(0);
+   if (!pProperty) {
+     return;
+@@ -709,6 +719,10 @@ void CPDF_StreamContentParser::Handle_BeginImage() {
+ }
+ 
+ void CPDF_StreamContentParser::Handle_BeginMarkedContent() {
++  if (content_marks_stack_.size() > kMaxMarkedContentDepth) {
++    ++ignored_marked_content_depth_;
++    return;
++  }
+   std::unique_ptr<CPDF_ContentMarks> new_marks =
+       content_marks_stack_.top()->Clone();
+   new_marks->AddMark(GetString(0));
+@@ -911,6 +925,10 @@ void CPDF_StreamContentParser::Handle_MarkPlace_Dictionary() {}
+ void CPDF_StreamContentParser::Handle_EndImage() {}
+ 
+ void CPDF_StreamContentParser::Handle_EndMarkedContent() {
++  if (ignored_marked_content_depth_ > 0) {
++    --ignored_marked_content_depth_;
++    return;
++  }
+   // First element is a sentinel, so do not pop it, ever. This may come up if
+   // the EMCs are mismatched with the BMC/BDCs.
+   if (content_marks_stack_.size() > 1) {
+@@ -1234,13 +1252,23 @@ RetainPtr<CPDF_Object> CPDF_StreamContentParser::FindResourceObj(
  
  RetainPtr<CPDF_Font> CPDF_StreamContentParser::FindFont(
      const ByteString& name) {
@@ -256,7 +302,7 @@ index a0d239f..039bef4 100644
      // Save `name` for later retrieval by the CPDF_TextObject that uses the
      // font.
 diff --git a/core/fpdfapi/page/cpdf_streamcontentparser.h b/core/fpdfapi/page/cpdf_streamcontentparser.h
-index 8aa0be5..abd4b16 100644
+index 8aa0be5..f4d359e 100644
 --- a/core/fpdfapi/page/cpdf_streamcontentparser.h
 +++ b/core/fpdfapi/page/cpdf_streamcontentparser.h
 @@ -8,6 +8,7 @@
@@ -267,9 +313,12 @@ index 8aa0be5..abd4b16 100644
  #include <memory>
  #include <optional>
  #include <stack>
-@@ -222,6 +223,10 @@ class CPDF_StreamContentParser {
+@@ -221,7 +222,13 @@ class CPDF_StreamContentParser {
+   std::unique_ptr<CPDF_StreamParser> syntax_;
    std::unique_ptr<CPDF_AllStates> cur_states_;
    std::stack<std::unique_ptr<CPDF_ContentMarks>> content_marks_stack_;
++  // BMC/BDCs past the nesting cap, which their EMCs must consume first.
++  size_t ignored_marked_content_depth_ = 0;
    std::vector<std::unique_ptr<CPDF_TextObject>> clip_text_list_;
 +  // llamaparse: `Tf` resolves the font resource name through the resource
 +  // dictionaries and the document font map on every operator; the mapping is
