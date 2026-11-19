@@ -11,6 +11,19 @@ THIRD_PARTY_LIBRARIES=$(sed -n 's/.*third_party\/\([a-z0-9_-]*\).*/\1/p' "$BUILD
 
 mkdir -p "$OUTPUT_DIR"
 
+# For licenses in DEPS checkouts whose layout we can't pin: warn, don't fail.
+copy_optional() {
+  local DEST="$1"
+  shift
+  for SRC in "$@"; do
+    if [ -f "$SRC" ]; then
+      cp "$SRC" "$DEST"
+      return
+    fi
+  done
+  echo "WARNING: no license file found for $DEST" >&2
+}
+
 sed 's|^//\s\?||' "$SOURCE_DIR/LICENSE" > "$OUTPUT_DIR/pdfium.txt"
 
 while read -r LIBRARY; do
@@ -21,6 +34,9 @@ while read -r LIBRARY; do
     agg23|fx_agg)
       sed '/^$/d;/#ifndef/,$d' "$SOURCE_DIR/third_party/agg23/agg_array.h" > "$OUTPUT_DIR/agg23.txt"
       ;;
+    brotli)
+      copy_optional "$OUTPUT_DIR/brotli.txt" "$SOURCE_DIR/third_party/brotli/LICENSE"
+      ;;
     bigint)
       cp  "$SOURCE_DIR/third_party/bigint/LICENSE" "$OUTPUT_DIR/bigint.txt"
       ;;
@@ -29,6 +45,12 @@ while read -r LIBRARY; do
       ;;
     cpu_features)
       cp "$SOURCE_DIR/third_party/cpu_features/src/LICENSE" "$OUTPUT_DIR/cpu_features.txt"
+      ;;
+    dragonbox)
+      copy_optional "$OUTPUT_DIR/dragonbox.txt" \
+        "$SOURCE_DIR/third_party/dragonbox/src/LICENSE-Boost" \
+        "$SOURCE_DIR/third_party/dragonbox/src/LICENSE-Apache2-LLVM" \
+        "$SOURCE_DIR/third_party/dragonbox/src/LICENSE"
       ;;
     fast_float)
       cp "$SOURCE_DIR/third_party/fast_float/src/LICENSE-MIT" "$OUTPUT_DIR/fast_float.txt"
@@ -49,7 +71,7 @@ while read -r LIBRARY; do
       cp "$SOURCE_DIR/v8/third_party/inspector_protocol/LICENSE" "$OUTPUT_DIR/inspector_protocol.txt"
       ;;
     lcms|lcms2|fx_lcms|fx_lcms2)
-      sed '/^$/,$d' "$SOURCE_DIR/third_party/lcms/include/lcms2.h" > "$OUTPUT_DIR/lcms.txt"
+      cp "$SOURCE_DIR/third_party/lcms/src/LICENSE" "$OUTPUT_DIR/lcms.txt"
       ;;
     libpng|png)
       cp "$SOURCE_DIR/third_party/libpng/LICENSE" "$OUTPUT_DIR/libpng.txt"
@@ -59,16 +81,22 @@ while read -r LIBRARY; do
       cp "$SOURCE_DIR/third_party/libjpeg_turbo/README.ijg" "$OUTPUT_DIR/libjpeg_turbo.ijg"
       ;;
     libopenjpeg|libopenjpeg2|fx_libopenjpeg)
-      sed -n '1,/\*\//p' "$SOURCE_DIR/third_party/libopenjpeg/openjpeg.c" > "$OUTPUT_DIR/libopenjpeg.txt"
+      cp "$SOURCE_DIR/third_party/libopenjpeg/src/LICENSE" "$OUTPUT_DIR/libopenjpeg.txt"
       ;;
     libtiff|fx_tiff|tiff)
       sed '1d;s/^.\{0,3\}//;23,$d' "$SOURCE_DIR/third_party/libtiff/t4.h" > "$OUTPUT_DIR/libtiff.txt"
+      ;;
+    libyuv)
+      copy_optional "$OUTPUT_DIR/libyuv.txt" "$SOURCE_DIR/third_party/libyuv/LICENSE"
       ;;
     libunwind)
       cp "$SOURCE_DIR/third_party/libunwind/src/LICENSE.TXT" "$OUTPUT_DIR/libunwind.txt"
       ;;
     llvm-libc)
       cp "$SOURCE_DIR/third_party/llvm-libc/src/LICENSE.TXT" "$OUTPUT_DIR/llvm-libc.txt"
+      ;;
+    mimalloc)
+      cp "$SOURCE_DIR/third_party/mimalloc/LICENSE" "$OUTPUT_DIR/mimalloc.txt"
       ;;
     simdutf)
       cp "$SOURCE_DIR/third_party/simdutf/LICENSE" "$OUTPUT_DIR/simdutf.txt"
