@@ -3,5 +3,10 @@ config("compiler") {
     # Enable fseeko() and ftello() (required by libopenjpeg20)
     # https://github.com/emscripten-core/emscripten/issues/4932
     "_POSIX_C_SOURCE=200112",
+
+    # libyuv (new PDFium dep) builds its WASM SIMD rows with -msimd128, which
+    # crashes the pinned emsdk's clang ("Do not know how to split this
+    # operator's operand!" in I422ToARGBRow_WASMSIMD). Use its C rows instead.
+    "LIBYUV_DISABLE_WASM",
   ]
 }
